@@ -167,6 +167,74 @@ test('瞬断宽限 —— 扩展在宽限期内带着回执回来，agent 拿到
   await settle();
 });
 
+// 云端冷启动抓到的现场：桥刚起来，扩展一秒里连了三条（offscreen 腿和 SW 兜底腿
+// 报同一个 instanceId，互相顶替），桥把排队的命令补发给第一条，它随即被顶掉。
+// 以前被顶掉的连接先从名单里摘掉再 close，close 事件里的断线宽限一次都没生效，
+// agent 干等到 TIMEOUT。
+test('同实例换连接 —— 被顶掉那条上的在途命令走断线宽限，不干等到 TIMEOUT', async () => {
+  const a = await ext({ instanceId: 'inst-swap' });
+  await settle();
+  const g = await agent('s-swap');
+  g.ws.send(JSON.stringify({ type: 'cmd', id: 'c-swap', cmd: 'status', params: {}, timeout: 32000 }));
+  await settle(200);
+  assert.equal(a.cmds.length, 1);
+
+  const res = nextOf(g.ws, 'res', 2000);   // 宽限 300ms；等满 32 秒的 TIMEOUT 就是老毛病
+  const a2 = await ext({ instanceId: 'inst-swap' });
+  assert.equal(await a.closed, 4009);
+  const r = await res;
+  assert.equal(r.error?.code, 'NO_EXTENSION', `收到的是：${JSON.stringify(r)}`);
+  assert.match(r.error.message, /可能已经在页面上生效/, '要提醒 agent 别把一次点击做成两次');
+  // 不改派：旧连接可能已经执行过，再发给新连接就是双击
+  await settle(100);
+  assert.equal(a2.cmds.length, 0, '被顶掉那条上的命令不该再发给新连接');
+
+  a2.ws.close(); g.ws.close();
+  await settle();
+});
+
+test('同实例换连接 —— 回执从新连接回来，照常送达', async () => {
+  const a = await ext({ instanceId: 'inst-swap2' });
+  await settle();
+  const g = await agent('s-swap2');
+  g.ws.send(JSON.stringify({ type: 'cmd', id: 'c-swap2', cmd: 'status', params: {} }));
+  await settle(200);
+  const k = a.cmds[0].__k;
+
+  const res = nextOf(g.ws, 'res');
+  const a2 = await ext({ instanceId: 'inst-swap2' });
+  a2.ws.send(JSON.stringify({ type: 'res', id: 'c-swap2', __k: k, ok: true, data: { text: 'via new leg' } }));
+  const r = await res;
+  assert.equal(r.ok, true, `收到的是：${JSON.stringify(r)}`);
+  assert.equal(r.data.text, 'via new leg');
+
+  a2.ws.close(); g.ws.close();
+  await settle();
+});
+
+test('同实例换连接 —— 旧连接在关闭握手里发出的回执不丢', async () => {
+  const a = await ext({ instanceId: 'inst-swap3' });
+  await settle();
+  const g = await agent('s-swap3');
+  g.ws.send(JSON.stringify({ type: 'cmd', id: 'c-swap3', cmd: 'status', params: {} }));
+  await settle(200);
+  const k = a.cmds[0].__k;
+
+  // 旧连接先别读到桥的关闭帧：它这侧还是 OPEN，正好把执行完的回执发出去——
+  // 真扩展里就是 SW 回执走到 offscreen 时，关闭帧还在路上
+  a.ws._socket.pause();
+  const res = nextOf(g.ws, 'res');
+  const a2 = await ext({ instanceId: 'inst-swap3' });
+  a.ws.send(JSON.stringify({ type: 'res', id: 'c-swap3', __k: k, ok: true, data: { text: 'from old leg' } }));
+  a.ws._socket.resume();
+  const r = await res;
+  assert.equal(r.ok, true, `收到的是：${JSON.stringify(r)}`);
+  assert.equal(r.data.text, 'from old leg');
+
+  a2.ws.close(); g.ws.close();
+  await settle();
+});
+
 test('拔插重连 —— 全断期间的命令排队，实例回来就补发', async () => {
   const g = await agent('s-queue');
   // 此刻一个实例都没有：命令应该排队而不是立刻判死

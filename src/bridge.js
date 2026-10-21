@@ -223,26 +223,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
       }
       if (extensions.delete(ws)) {
         log(`扩展断开（${extLabel(ws)}）`);
-        // 这条连接承接的在途命令**不立刻判死**，给一个心跳周期的宽限。
-        //
-        // 原先是当场回 NO_EXTENSION。可断线多半是瞬断（睡醒后看门狗互杀、
-        // 双腿替换、桥换代），扩展 1 秒内就带着同一个 instanceId 回来了，而那条
-        // 命令早已在页面上执行完、回执也存在扩展的发件箱里等着补发。当场判死的
-        // 后果是最坏的一种：点击已经生效，agent 收到「失败」，按提示重试
-        // 就是双击/重复下单——正是这个产品明说要消灭的静默失败。
-        // 宽限期里回执按 __k 回来照常配对（routeBack 不看它从哪条连接来）；
-        // 宽限用完还没回来，再按原来的话报错。别的实例的命令一概不动。
-        for (const [k, p] of pending) {
-          if (p.ext !== ws || p.orphanTimer) continue;
-          p.orphanTimer = setTimeout(() => {
-            if (!pending.has(k)) return;
-            clearTimeout(p.timer);
-            pending.delete(k);
-            send(p.agent, { type: 'res', id: p.id, ok: false, error: { code: 'NO_EXTENSION',
-              message: `扩展在命令执行中断开，${orphanGraceMs / 1000} 秒内没回来。这条命令可能已经在页面上生效了——`
-                + '重试前先 snapshot 看一眼，别把一次点击做成两次。' } });
-          }, orphanGraceMs);
-        }
+        orphan(ws);
         // 一个都不剩了才算「扩展离线」
         if (!liveExtensions().length) broadcast({ type: 'event', event: 'extension_offline' });
       }
@@ -250,6 +231,29 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
 
     ws.on('error', () => {});
   });
+
+  // 这条连接承接的在途命令**不立刻判死**，给一个心跳周期的宽限。
+  //
+  // 原先是当场回 NO_EXTENSION。可断线多半是瞬断（睡醒后看门狗互杀、
+  // 双腿替换、桥换代），扩展 1 秒内就带着同一个 instanceId 回来了，而那条
+  // 命令早已在页面上执行完、回执也存在扩展的发件箱里等着补发。当场判死的
+  // 后果是最坏的一种：点击已经生效，agent 收到「失败」，按提示重试
+  // 就是双击/重复下单——正是这个产品明说要消灭的静默失败。
+  // 宽限期里回执按 __k 回来照常配对（routeBack 不看它从哪条连接来）；
+  // 宽限用完还没回来，再按原来的话报错。别的实例的命令一概不动。
+  function orphan(ws) {
+    for (const [k, p] of pending) {
+      if (p.ext !== ws || p.orphanTimer) continue;
+      p.orphanTimer = setTimeout(() => {
+        if (!pending.has(k)) return;
+        clearTimeout(p.timer);
+        pending.delete(k);
+        send(p.agent, { type: 'res', id: p.id, ok: false, error: { code: 'NO_EXTENSION',
+          message: `扩展在命令执行中断开，${orphanGraceMs / 1000} 秒内没回来。这条命令可能已经在页面上生效了——`
+            + '重试前先 snapshot 看一眼，别把一次点击做成两次。' } });
+      }, orphanGraceMs);
+    }
+  }
 
   function handleHello(ws, msg) {
     if (msg.type !== 'hello') return ws.close(4000, 'expected hello');
@@ -267,9 +271,20 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
 
       // 同一个实例又连了一条：那是断线重连或重载扩展，旧的那条已经是死的，
       // 顶掉它。**只顶同实例的**——顶错了就退回单槽，每秒互踢的老毛病就回来了。
+      //
+      // 被顶掉的那条手上的在途命令也走断线宽限。以前这里先从 extensions 里摘掉、
+      // 再 close，等它的 close 事件跑到 `if (extensions.delete(ws))` 时早已摘过了，
+      // 宽限一次都没生效——那些命令只能干等到 TIMEOUT（云端冷启动抓到：扩展一秒内
+      // 连了三条，第一条刚接下补发的排队命令就被顶掉，agent 等满 32 秒）。
+      // **不改派给新连接**：旧连接可能已经把命令递进 SW、点击已经生效，再发一遍
+      // 就是双击。同一个实例的 SW 会把回执从任一条腿按 __k 送回来，宽限内照常配对。
       for (const old of extensions) {
         if (old.instanceId === ws.instanceId && old !== ws) {
           extensions.delete(old);
+          // 被顶掉的连接不会再走「扩展断开」那行日志，这里不记，日志里就只剩
+          // 一串「扩展已连接」，看不出命令是落在哪条被顶掉的连接上
+          log(`扩展换了一条连接，顶掉旧的（${extLabel(old)}）`);
+          orphan(old);
           if (old.readyState === 1) old.close(4009, 'replaced');
         }
       }
@@ -431,7 +446,10 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
 
     // extension → agent
     if (msg.type === 'res') {
-      if (!extensions.has(ws)) return;
+      // 认扩展身份，不认「还在不在 extensions 里」：被顶掉的连接在关闭握手那几毫秒里
+      // 仍可能把回执发过来，按在不在名单判就把一条已经执行完的命令静默丢了。
+      // 配对靠 __k，同一条命令只会配上一次，从哪条腿来都不会重复送达。
+      if (!ws.isExtension) return;
       let key = msg.__k;
       let p = key ? pending.get(key) : null;
       if (!p) {

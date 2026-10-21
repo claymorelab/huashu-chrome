@@ -32,7 +32,7 @@ let ws = null;
 let pingTimer = null;
 let retryTimer = null;
 let retryDelay = 0;
-let connecting = false;
+let connecting = null;           // 在途的那次 connect()，见 connect() 上的说明
 let lastRx = 0;                 // 最近一次从桥收到**任何**东西的时刻（含 pong）
 let lastTick = 0;               // 心跳定时器上一次跑到的时刻——判「机器睡过一觉」用
 let bridgeVersion = '';         // welcome 里桥报的版本，popup 要显示、SW 要比对
@@ -85,60 +85,70 @@ async function askIdentity() {
   return r?.extId ? r : null;
 }
 
-async function connect() {
-  if (connecting || ws?.readyState <= 1) return;
-  connecting = true;
-  try {
-    const who = await askIdentity();
-    if (!who) { setStatus(false); return scheduleReconnect(); }
-    const hello = {
-      type: 'hello',
-      role: 'extension',
-      extId: who.extId,
-      version: who.version,
-      // 桥按实例区分连接，靠这两个字段：同 instanceId = 同一个 Chrome 断线重连，
-      // 该顶掉旧连接；不同 = 另一个 Chrome，该并存。headless 的那个不抢主。
-      instanceId: who.instanceId,
-      headless: !!who.headless,
-      chrome: (navigator.userAgent.match(/Chrome\/([\d.]+)/) || [])[1],
-      v: 1,
-    };
+// 单飞并且**交出在途的那一次**，不是撞上了就直接返回。SW 的 kick 要等这条腿
+// 真的探完才决定要不要自己顶上；以前撞上在途的 connect() 立刻回「没连上」，
+// SW 就再开一条兜底腿，跟这边刚握上手的那条互相顶替。
+function connect() {
+  if (!connecting) connecting = doConnect().finally(() => { connecting = null; });
+  return connecting;
+}
 
-    let winner = null;
-    const races = PORTS.map((p) => probe(p, hello).then((r) => {
-      // 只留第一个握上手的，其余当场关掉——不关的话桥那边会看到
-      // 四条多余的扩展连接，而桥「同时只认一个扩展」，后来者会把前一个踢掉
-      if (winner) { try { r.sock.close(); } catch { /* 已经废了 */ } return null; }
-      winner = r;
-      return r;
-    }));
-    const results = await Promise.allSettled(races);
-    const hit = results.map((r) => r.value).find(Boolean);
-    if (!hit) { setStatus(false); return scheduleReconnect(); }
-    if (hit.sock.readyState !== 1) { setStatus(false); return scheduleReconnect(); }
+async function doConnect() {
+  if (ws?.readyState <= 1) return;
+  const who = await askIdentity();
+  if (!who) { setStatus(false); return scheduleReconnect(); }
+  const hello = {
+    type: 'hello',
+    role: 'extension',
+    extId: who.extId,
+    version: who.version,
+    // 桥按实例区分连接，靠这两个字段：同 instanceId = 同一个 Chrome 断线重连，
+    // 该顶掉旧连接；不同 = 另一个 Chrome，该并存。headless 的那个不抢主。
+    instanceId: who.instanceId,
+    headless: !!who.headless,
+    chrome: (navigator.userAgent.match(/Chrome\/([\d.]+)/) || [])[1],
+    v: 1,
+  };
 
-    ws = hit.sock;
-    retryDelay = 0;
-    lastRx = Date.now();      // 看门狗的起点：刚握完手，算收到过
-    bridgeVersion = String(hit.welcome?.bridge || '');
-    const deliver = (raw) => {
-      let msg;
-      try { msg = JSON.parse(raw); } catch { return; }
-      if (msg.type === 'pong') return;              // 心跳回执，收到本身就是目的
-      // 桥主动探活（静默 50 秒后它会先问一声再杀）——回一声就行，不必吵醒 SW
-      if (msg.type === 'ping') { if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'pong' })); return; }
-      post({ __hcBridge: 'in', msg });              // 其余全部丢给 SW，它才认识命令
-    };
-    ws.onmessage = (e) => { lastRx = Date.now(); deliver(e.data); };
-    ws.onclose = () => { ws = null; stopPing(); setStatus(false); scheduleReconnect(); };
-    ws.onerror = () => { /* onclose 会跟着来，在那儿统一处理 */ };
-    startPing();
-    setStatus(true);
-    post({ __hcBridge: 'up', bridge: hit.welcome.bridge });
-    for (const raw of hit.buffered) deliver(raw);   // 补上握手窗口里到达的那几条
-  } finally {
-    connecting = false;
+  let winner = null;
+  const races = PORTS.map((p) => probe(p, hello).then((r) => {
+    // 只留第一个握上手的，其余当场关掉——不关的话桥那边会看到
+    // 四条多余的扩展连接，而桥「同时只认一个扩展」，后来者会把前一个踢掉
+    if (winner) { try { r.sock.close(); } catch { /* 已经废了 */ } return null; }
+    winner = r;
+    return r;
+  }));
+  const results = await Promise.allSettled(races);
+  const hit = results.map((r) => r.value).find(Boolean);
+  if (!hit) { setStatus(false); return scheduleReconnect(); }
+  const deliver = (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+    if (msg.type === 'pong') return;              // 心跳回执，收到本身就是目的
+    // 桥主动探活（静默 50 秒后它会先问一声再杀）——回一声就行，不必吵醒 SW
+    if (msg.type === 'ping') { if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'pong' })); return; }
+    post({ __hcBridge: 'in', msg });              // 其余全部丢给 SW，它才认识命令
+  };
+  // 握手窗口里这条 socket 已经被关了（多半是被同实例的另一条腿顶掉），缓存里的
+  // 命令照样交给 SW，别跟着扔：桥已经把它们记在这条连接名下，只会等回执、不会重发。
+  // SW 执行完从任一条腿按 __k 回，桥在断线宽限里照常配对。
+  if (hit.sock.readyState !== 1) {
+    for (const raw of hit.buffered) deliver(raw);
+    setStatus(false);
+    return scheduleReconnect();
   }
+
+  ws = hit.sock;
+  retryDelay = 0;
+  lastRx = Date.now();      // 看门狗的起点：刚握完手，算收到过
+  bridgeVersion = String(hit.welcome?.bridge || '');
+  ws.onmessage = (e) => { lastRx = Date.now(); deliver(e.data); };
+  ws.onclose = () => { ws = null; stopPing(); setStatus(false); scheduleReconnect(); };
+  ws.onerror = () => { /* onclose 会跟着来，在那儿统一处理 */ };
+  startPing();
+  setStatus(true);
+  post({ __hcBridge: 'up', bridge: hit.welcome.bridge });
+  for (const raw of hit.buffered) deliver(raw);   // 补上握手窗口里到达的那几条
 }
 
 // 心跳必须**验回音**，只发不验等于没发。
