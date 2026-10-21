@@ -9,7 +9,7 @@
 // 别的扩展（包括上游 huashu-chrome）同样带 chrome-extension:// 却不该能驱动这个桥。
 import { WebSocketServer } from 'ws';
 import fs from 'node:fs';
-import { DEFAULT_PORT, EXTENSION_ORIGIN, writeBridgeInfo, newToken, tokenEquals, audit, ensureHome, ALLOWLIST_FILE } from './lib/paths.js';
+import { DEFAULT_PORT, EXTENSION_ORIGIN, writeBridgeInfo, newToken, tokenEquals, audit, ensureHome, ALLOWLIST_FILE, EXTENSION_SEEN_FILE } from './lib/paths.js';
 import { VERSION } from './lib/version.js';
 // 纯字符串判定、不碰 chrome API，所以桥这边直接复用，不再抄一份
 import { scrubProse } from '../extension/redact.js';
@@ -88,6 +88,9 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
   const NO_EXT_MSG = '扩展没连上桥。桥已经替你等过一轮'
     + `（最多 ${WAIT_MAX / 1000}s），它还没回来。让用户点一下浏览器工具栏的 Claymore Piko 图标 → 「重连」`
     + '（插件没消失，只是这条连接断了）；Chrome 没开就先开；改过扩展代码才需要去 chrome://extensions 重载。';
+
+  const NO_EXT_INSTALL_MSG = '这台电脑的 Chrome 从来没有连上过 Claymore Piko 扩展，多半是还没装。'
+    + '让用户在 Chrome 里安装并启用 Claymore Piko 扩展，装好后保持 Chrome 开着再重试。';
 
   let lastAgentAt = Date.now();
   let lastIdleState = '';         // 空闲状态变了才记一行，免得每拍刷屏   // 最近一次有 agent 连着或说话的时刻，空闲退出只看它
@@ -234,6 +237,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
         }
       }
       extensions.add(ws);
+      try { if (!fs.existsSync(EXTENSION_SEEN_FILE)) fs.writeFileSync(EXTENSION_SEEN_FILE, new Date().toISOString() + '\n', { mode: 0o600 }); } catch { /* 记不下只影响提示措辞 */ }
 
       // 改了扩展代码却忘记去 chrome://extensions 重载，是这类产品最高频的故障，
       // 症状还都是些莫名其妙的行为。这里把它变成一句明确的话。
@@ -316,7 +320,11 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
   // 窗口取「调用方自己声明的 timeout」和 WAIT_MAX 里更小的那个——
   // 调用方说只等 300ms，桥就不该替它等 40 秒，那只是换了个姿势干等。
   function enqueue(ws, msg) {
-    const fail = () => send(ws, { type: 'res', id: msg.id, ok: false, error: { code: 'NO_EXTENSION', message: NO_EXT_MSG } });
+    const fail = () => {
+      const neverConnected = !fs.existsSync(EXTENSION_SEEN_FILE);
+      send(ws, { type: 'res', id: msg.id, ok: false, error: { code: 'NO_EXTENSION',
+        message: neverConnected ? NO_EXT_INSTALL_MSG : NO_EXT_MSG, neverConnected } });
+    };
     if (waiting.length >= WAIT_CAP) return fail();
 
     const ms = Math.min(Number(msg.timeout) || WAIT_MAX, WAIT_MAX);
