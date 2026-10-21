@@ -74,3 +74,10 @@ test('HUASHU_CHROME_SESSION_ID 固定会话标识，空值回到默认推断', a
   c.identify('claude-code', 'Claude Code');
   assert.equal(c.sessionId, 'piko:abc');
 });
+
+test('HUASHU_CHROME_HOME 只接受绝对路径', async () => {
+  const { homeDir } = await import('../src/lib/paths.js');
+  assert.equal(homeDir({ HUASHU_CHROME_HOME: '/srv/state/huashu-chrome' }), '/srv/state/huashu-chrome');
+  assert.match(homeDir({ HUASHU_CHROME_HOME: 'relative/dir' }), /\.huashu-chrome$/);
+  assert.match(homeDir({}), /\.huashu-chrome$/);
+});
