@@ -4,7 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export const HOME = path.join(os.homedir(), '.huashu-chrome');
+// HUASHU_CHROME_HOME 让宿主指定配置目录。Piko 给 MCP server 的 HOME 是每个
+// 会话隔离的，按 HOME 推出来的目录各不相同，几个会话就会各起一个桥、互相抢
+// 8899 端口。宿主给同一个账号级目录，大家就共用一个桥。只接受绝对路径。
+export function homeDir(env = process.env) {
+  const configured = String(env.HUASHU_CHROME_HOME ?? '').trim();
+  if (configured && path.isAbsolute(configured)) return configured;
+  return path.join(os.homedir(), '.huashu-chrome');
+}
+
+export const HOME = homeDir();
 export const BRIDGE_FILE = path.join(HOME, 'bridge.json');
 export const LOCK_FILE = path.join(HOME, 'bridge.lock');
 export const AUDIT_FILE = path.join(HOME, 'audit.jsonl');
