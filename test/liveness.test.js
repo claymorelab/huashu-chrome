@@ -82,3 +82,41 @@ test('没有 agent、没有在途命令就按时退出，扩展连着也一样�
     b.close();
   }
 });
+
+// 会话下线那一刻扩展恰好断着（被回收、桥换代），它就收不到那条 sessions 推送，
+// storage 里的旧名单让早已走掉的会话一直「占着」它的标签页。
+test('扩展一连上就收到当前在线名单', async () => {
+  const port = PORT + 2, token = 'e'.repeat(64);
+  const b = startBridge({ port, token, writeInfo: false });
+  await b.ready;
+  const hello = async () => {
+    const e = new WebSocket(`ws://127.0.0.1:${port}`, { origin: EXTENSION_ORIGIN });
+    const got = new Promise((resolve) => e.on('message', (d) => {
+      const m = JSON.parse(d.toString());
+      if (m.type === 'event' && m.event === 'sessions') resolve(m.live);
+    }));
+    await new Promise((r) => e.on('open', r));
+    e.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'piko', version: VERSION, instanceId: 'sess-ext', v: 1 }));
+    const live = await got;
+    e.close();
+    return live;
+  };
+  try {
+    const agent = new WebSocket(`ws://127.0.0.1:${port}`);
+    await new Promise((r) => agent.on('open', r));
+    const welcomed = new Promise((r) => agent.once('message', r));
+    agent.send(JSON.stringify({ type: 'hello', role: 'agent', token, client: 'test', sessionId: 'sess:1', v: 1 }));
+    await welcomed;
+    assert.deepEqual(await hello(), ['sess:1']);
+
+    const gone = new Promise((r) => agent.on('close', r));
+    agent.close();
+    await gone;
+    // 桥那侧的 close 处理和这里的 close 事件不保证先后，等它把名单摘干净
+    let live;
+    for (let i = 0; i < 20; i++) { live = await hello(); if (!live.length) break; }
+    assert.deepEqual(live, [], '会话走了，后连上的扩展拿到的名单里不该还有它');
+  } finally {
+    b.close();
+  }
+});

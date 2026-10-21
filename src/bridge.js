@@ -247,6 +247,10 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
           + `命令路由到：${extLabel(primary())}`);
       }
       send(ws, { type: 'welcome', bridge: VERSION, v: PROTOCOL });
+      // 紧跟 welcome 推一次在线名单。会话下线时的那条 sessions 推送只发给当时连着的
+      // 扩展；扩展那会儿断着（被回收、桥换代）就收不到，storage 里留着旧名单，
+      // 早已走掉的会话的标签页就一直显示「被占着」，标记和标签组也摘不掉。
+      send(ws, { type: 'event', event: 'sessions', live: liveSessions() });
       broadcast({ type: 'event', event: 'extension_online' });
       flushWaiting();
       return;
