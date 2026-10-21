@@ -89,7 +89,8 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     + `（最多 ${WAIT_MAX / 1000}s），它还没回来。让用户点一下浏览器工具栏的 Claymore Piko 图标 → 「重连」`
     + '（插件没消失，只是这条连接断了）；Chrome 没开就先开；改过扩展代码才需要去 chrome://extensions 重载。';
 
-  let lastAgentAt = Date.now();   // 最近一次有 agent 连着或说话的时刻，空闲退出只看它
+  let lastAgentAt = Date.now();
+  let lastIdleState = '';         // 空闲状态变了才记一行，免得每拍刷屏   // 最近一次有 agent 连着或说话的时刻，空闲退出只看它
 
   // 在线会话集合。扩展靠它判断「最近那个受控标签页还有主吗」——有主就不让
   // 新会话继承，没主才放行。这是「两个 agent 撞进同一个页面」唯一能拦住的地方，
@@ -162,6 +163,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
       clearTimeout(helloTimer);
       if (agents.delete(ws)) {
         lastAgentAt = Date.now();
+        log(`agent 已断开：${ws.label || ws.client}（${ws.sid || '无会话'}），还剩 ${agents.size} 个`);
         // 只把它从在线集合里摘掉，**不删它的受控标签页槽**。
         // 这条连接断开有两种可能：会话真的结束了，或者只是桥在换代/抖了一下
         // 而 agent 马上会带着同一个 sessionId 回来。删槽会把后者也一起毁掉，
@@ -265,6 +267,10 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
       agents.add(ws);
       lastAgentAt = Date.now();
       ws.helloed = true;
+      // 协议层心跳：agent 进程被杀、机器断网时，TCP 不一定告诉我们（Piko 删掉会话后
+      // 那个会话还一直算在线，它的标签页一直标着 ×，桥也一直不空闲退出）。
+      // Node 的 WebSocket 客户端（undici 和 ws）都会自动回 pong，不用 agent 改代码。
+      ws.on('pong', () => { ws.pongAt = Date.now(); });
       ws.client = msg.client || 'unknown';
       // label 是宿主的显示名（「Codex CLI」），由 MCP server 从握手里认出来；
       // client 仍是审计和 sid 用的 slug。老客户端不带 label，扩展侧退回美化 slug。
@@ -487,6 +493,19 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
         e.terminate();
       }
     }
+    for (const a of agents) {
+      // 上一拍发出去的 ping 到这一拍还没回 pong，就是死连接：主动切断，close 里摘名单。
+      if (a.pingAt && !(a.pongAt >= a.pingAt)) {
+        log(`agent 心跳超时，判定已断开：${a.label || a.client}（${a.sid || '无会话'}）`);
+        a.terminate();
+        continue;
+      }
+      a.pingAt = now;
+      try { a.ping(); } catch { /* 发不出去的连接下一拍就会被判死 */ }
+    }
+    const idleState = agents.size === 0 ? `空闲：pending=${pending.size} waiting=${waiting.length}` : '';
+    if (idleState && idleState !== lastIdleState) log(`没有 agent 连着（${idleState}），${Math.round(idleExitMs / 60000)} 分钟后自行退出`);
+    lastIdleState = idleState;
     if (exitWhenIdle && agents.size === 0 && pending.size === 0 && !waiting.length && Date.now() - lastAgentAt > idleExitMs) {
       log(`${Math.round(idleExitMs / 60000)} 分钟没有 agent，桥自行退出`);
       clearInterval(idleTimer);

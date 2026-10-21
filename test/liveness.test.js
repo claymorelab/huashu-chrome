@@ -120,3 +120,30 @@ test('扩展一连上就收到当前在线名单', async () => {
     b.close();
   }
 });
+
+// Piko 删掉会话、agent 进程被杀时，TCP 不一定通知桥。协议层 ping 不回 pong 的 agent
+// 要被摘掉，不然它的标签页一直标着「别的会话在用」，桥也永远不空闲退出。
+test('不回协议层 pong 的 agent 被判死并摘出在线名单', async () => {
+  const port = PORT + 2, token = 'e'.repeat(64);
+  const b = startBridge({ port, token, writeInfo: false, tickMs: 100, exitWhenIdle: false });
+  await b.ready;
+  try {
+    const agent = (autoPong) => new Promise((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}`, { autoPong });
+      ws.on('open', () => {
+        ws.send(JSON.stringify({ type: 'hello', role: 'agent', token, client: 'test', sessionId: autoPong ? 'alive' : 'dead', v: 1 }));
+        resolve(ws);
+      });
+    });
+    const alive = await agent(true);
+    const dead = await agent(false);
+    const deadClosed = new Promise((r) => dead.on('close', r));
+    await Promise.race([deadClosed, sleep(2000)]);
+    assert.notEqual(dead.readyState, WebSocket.OPEN, '不回 pong 的 agent 应该被切断');
+    await sleep(300);
+    assert.equal(alive.readyState, WebSocket.OPEN, '会回 pong 的 agent 不该被切断');
+    alive.close();
+  } finally {
+    b.close();
+  }
+});
