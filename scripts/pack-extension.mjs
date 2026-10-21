@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 打 Claymore Piko 扩展的 zip 包。
 //
-// manifest 里的 `key` **保留**：扩展 ID（mdgjhgdcdiehjoinklgbgoabeaokeaim）由它算出，
+// manifest 里的 `key` **保留**：扩展 ID（afnglaiimnjpcdnnihploelgnoalaogm）由它算出（这把公钥来自 Chrome 应用商店后台的 View public key，商店版和解包加载的 ID 相同），
 // 本机的桥只接受这个 ID（src/lib/paths.js 的 EXTENSION_ID）。剥掉 key 的包装出来是另一个 ID，
 // 连不上桥。Chrome 应用商店上架时同样要保证商店给的 ID 就是这一个，否则桥会拒绝商店版。
 // 不改 extension/ 目录本身——那是 unpacked 加载和 doctor 指向的真源。

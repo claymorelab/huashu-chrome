@@ -46,7 +46,7 @@ CLI 是入口（install / mcp / doctor），MCP server 是 agent 的接口，本
 | | Claymore Piko | 上游 huashu-chrome |
 |---|---|---|
 | 扩展名称 | Claymore Piko | huashu-chrome |
-| 扩展 ID | `mdgjhgdcdiehjoinklgbgoabeaokeaim` | `foiljmaplphdfimfcnfdpekhdnfbgfbf` |
+| 扩展 ID | `afnglaiimnjpcdnnihploelgnoalaogm` | `foiljmaplphdfimfcnfdpekhdnfbgfbf` |
 | 桥端口 | 8898（扩展从 8898 往下探到 8894） | 8899–8903 |
 | 配置目录 | `~/.claymore-piko-browser` | `~/.huashu-chrome` |
 | MCP server 名 | `piko-browser` | `huashu-chrome` |
@@ -608,5 +608,5 @@ screenshots, so it never mistakes our overlay for a page element.
 
 **Install**: `npx claymore-piko-browser install`, then load the extension unpacked from
 `chrome://extensions` (Developer mode → Load unpacked → `extension/`; the Chrome Web Store link comes later;
-browsers do not let scripts do that part). Extension ID: `mdgjhgdcdiehjoinklgbgoabeaokeaim`; bridge port 8898;
+browsers do not let scripts do that part). Extension ID: `afnglaiimnjpcdnnihploelgnoalaogm`; bridge port 8898;
 config dir `~/.claymore-piko-browser`. Verify with `npx claymore-piko-browser doctor`.

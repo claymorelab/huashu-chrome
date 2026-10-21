@@ -31,7 +31,7 @@ export const DEFAULT_PORT = 8898;
 
 // Claymore Piko 扩展的 ID，由 extension/manifest.json 的 key 算出（test/protocol.test.js 守着）。
 // 桥只放这一个扩展进来：上游 huashu-chrome 或任何别的扩展都连不上我们的桥。
-export const EXTENSION_ID = 'mdgjhgdcdiehjoinklgbgoabeaokeaim';
+export const EXTENSION_ID = 'afnglaiimnjpcdnnihploelgnoalaogm';
 export const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
 
 export function ensureHome() {

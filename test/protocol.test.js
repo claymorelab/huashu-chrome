@@ -62,7 +62,7 @@ test('只放 Claymore Piko 扩展进来：别的扩展（包括上游 huashu-chr
 
 test('桥认的扩展 ID 就是 manifest 公钥算出来的那个', async () => {
   const { extensionId } = await import('../src/install.js');
-  assert.equal(EXTENSION_ID, 'mdgjhgdcdiehjoinklgbgoabeaokeaim');
+  assert.equal(EXTENSION_ID, 'afnglaiimnjpcdnnihploelgnoalaogm');
   assert.equal(extensionId(), EXTENSION_ID);
 });
 
