@@ -30,9 +30,12 @@ export const EXTENSION_SEEN_FILE = path.join(HOME, 'extension-seen');
 export const DEFAULT_PORT = 8898;
 
 // Claymore Piko 扩展的 ID，由 extension/manifest.json 的 key 算出（test/protocol.test.js 守着）。
-// 桥只放这一个扩展进来：上游 huashu-chrome 或任何别的扩展都连不上我们的桥。
+// 云端 Home 装的是 scripts/pack-cloud-crx.mjs 用我们自己的私钥签的 CRX，ID 由那把私钥算出（商店 key 的私钥在 Google 手里）。
+// 桥只放这两个 ID 进来：上游 huashu-chrome 或任何别的扩展都连不上我们的桥。
 export const EXTENSION_ID = 'afnglaiimnjpcdnnihploelgnoalaogm';
+export const CLOUD_EXTENSION_ID = 'mdgjhgdcdiehjoinklgbgoabeaokeaim';
 export const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
+export const EXTENSION_ORIGINS = [EXTENSION_ORIGIN, `chrome-extension://${CLOUD_EXTENSION_ID}`];
 
 export function ensureHome() {
   fs.mkdirSync(HOME, { recursive: true, mode: 0o700 });

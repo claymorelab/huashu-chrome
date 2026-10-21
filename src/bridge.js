@@ -9,7 +9,7 @@
 // 别的扩展（包括上游 huashu-chrome）同样带 chrome-extension:// 却不该能驱动这个桥。
 import { WebSocketServer } from 'ws';
 import fs from 'node:fs';
-import { DEFAULT_PORT, EXTENSION_ORIGIN, writeBridgeInfo, newToken, tokenEquals, audit, ensureHome, ALLOWLIST_FILE, EXTENSION_SEEN_FILE } from './lib/paths.js';
+import { DEFAULT_PORT, EXTENSION_ORIGINS, writeBridgeInfo, newToken, tokenEquals, audit, ensureHome, ALLOWLIST_FILE, EXTENSION_SEEN_FILE } from './lib/paths.js';
 import { VERSION } from './lib/version.js';
 // 纯字符串判定、不碰 chrome API，所以桥这边直接复用，不再抄一份
 import { scrubProse } from '../extension/redact.js';
@@ -164,7 +164,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     verifyClient: (info, done) => {
       const origin = info.req.headers.origin;
       if (origin === undefined) return done(true);              // Node 侧，进握手后验 token
-      if (origin === EXTENSION_ORIGIN) return done(true);
+      if (EXTENSION_ORIGINS.includes(origin)) return done(true);
       audit({ ev: 'reject_origin', origin });                   // 网页想连桥——这就是攻击面，堵在这里
       done(false, 403, 'forbidden origin');
     },
@@ -172,7 +172,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
 
   wss.on('connection', (ws, req) => {
     const origin = req.headers.origin;
-    ws.isExtension = origin === EXTENSION_ORIGIN;
+    ws.isExtension = EXTENSION_ORIGINS.includes(origin);
     ws.helloed = false;
     ws.connId = ++connSeq;
     ws.lastRx = Date.now();

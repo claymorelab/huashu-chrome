@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Claymore Piko",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "Claymore Piko 浏览器扩展：让你的 Piko 和其他支持 MCP 的 AI agent 操控你自己的 Chrome，带着全部登录态。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyiHx+U696Ox11meA1I+Prg0ZeG4RdOOHOr2DQzFf87yUVtW5Wv3AopNvkGtGLKwwczm1WjvC/YVReLL17Uh4TxKZxx37ZHXYWWXFbWpJ3hl9BzRl5FsLIcTflPxzn5dmw3nbDZ45GpGLrqQE9x9jnpzw1tU0+VvWEpz54r2iAX0IB4/0b55CN+gUEIPpRLobJ/zULrbf2oVL5LVhIoMibCL/S0X37C62XmfcfeGH8xzSvsg1RyWF8OT2XwkOnj33XMAz3bF7rx1yW09CAYv8ZE9eMU/7IppFsPkd7jfQbY1+gQxXT3R4YQPMYurVDEkDI25Kb7P39ZFR4j9YfJVDlQIDAQAB",
   "minimum_chrome_version": "116",

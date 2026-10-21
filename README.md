@@ -46,7 +46,7 @@ CLI 是入口（install / mcp / doctor），MCP server 是 agent 的接口，本
 | | Claymore Piko | 上游 huashu-chrome |
 |---|---|---|
 | 扩展名称 | Claymore Piko | huashu-chrome |
-| 扩展 ID | `afnglaiimnjpcdnnihploelgnoalaogm` | `foiljmaplphdfimfcnfdpekhdnfbgfbf` |
+| 扩展 ID | `afnglaiimnjpcdnnihploelgnoalaogm`（云端 Home 预装的 CRX 是 `mdgjhgdcdiehjoinklgbgoabeaokeaim`，见 `scripts/pack-cloud-crx.mjs`） | `foiljmaplphdfimfcnfdpekhdnfbgfbf` |
 | 桥端口 | 8898（扩展从 8898 往下探到 8894） | 8899–8903 |
 | 配置目录 | `~/.claymore-piko-browser` | `~/.huashu-chrome` |
 | MCP server 名 | `piko-browser` | `huashu-chrome` |
