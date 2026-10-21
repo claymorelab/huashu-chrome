@@ -554,8 +554,15 @@ export function labelFromEnv(env = process.env) {
   return value || undefined;
 }
 
+// HUASHU_CHROME_SESSION_WINDOWS=1：每个会话在自己的窗口里干活，动手时把那个窗口提到前面。
+// 给的是「一台浏览器、好几个 Bot、用户隔着远程桌面看」的场景（Piko 云端 Home）；
+// 本机用户自己的 Chrome 不设它，照旧只在后台开标签页。
+export function sessionWindowsFromEnv(env = process.env) {
+  return String(env.HUASHU_CHROME_SESSION_WINDOWS ?? '').trim() === '1';
+}
+
 export async function startMcpServer({ client = 'unknown' } = {}) {
-  const bridge = new BridgeClient({ client, sessionId: sessionIdFromEnv(), label: labelFromEnv() });
+  const bridge = new BridgeClient({ client, sessionId: sessionIdFromEnv(), label: labelFromEnv(), sessionWindows: sessionWindowsFromEnv() });
   const server = new Server(
     { name: 'piko-browser', version: VERSION },
     { capabilities: { tools: {} }, instructions: STRATEGY }

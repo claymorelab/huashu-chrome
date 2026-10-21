@@ -32,8 +32,11 @@ export class BridgeClient {
   // sessionId 可以由调用方指定：宿主如果自己有一个稳定的会话标识，那个比
   // 从 ppid 猜出来的更准。不指定就用默认那套。
   // label 同理：宿主指定了（HUASHU_CHROME_LABEL）就钉住，identify() 只改 client。
-  constructor({ client = 'unknown', sessionId, label } = {}) {
+  // sessionWindows：宿主要求「每个会话一个自己的窗口」（云端 Piko 那台共享浏览器）。
+  // 本机用户自己的 Chrome 不开它——那边只在后台开标签页，不抢焦点。
+  constructor({ client = 'unknown', sessionId, label, sessionWindows = false } = {}) {
     this.client = client;
+    this.sessionWindows = !!sessionWindows;
     this.label = label;
     this.pinnedLabel = !!label;
     this.pinnedSid = !!sessionId;
@@ -92,7 +95,7 @@ export class BridgeClient {
       const t = setTimeout(() => { ws.close(); fail(new Error('握手超时')); }, 4000);
 
       ws.onerror = fail;
-      ws.onopen = () => ws.send(JSON.stringify({ type: 'hello', role: 'agent', token: info.token, client: this.client, label: this.label, sessionId: this.sessionId, v: 1 }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'hello', role: 'agent', token: info.token, client: this.client, label: this.label, sessionId: this.sessionId, ...(this.sessionWindows ? { windows: true } : {}), v: 1 }));
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === 'welcome') {
