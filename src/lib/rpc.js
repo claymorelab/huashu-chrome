@@ -119,7 +119,7 @@ export class BridgeClient {
       if (!w) return;
       this.waiting.delete(msg.id);
       clearTimeout(w.timer);
-      msg.ok ? w.resolve(msg.data ?? {}) : w.reject(Object.assign(new Error(msg.error?.message || '命令失败'), { code: msg.error?.code || 'INTERNAL' }));
+      msg.ok ? w.resolve(msg.data ?? {}) : w.reject(Object.assign(new Error(msg.error?.message || '命令失败'), { code: msg.error?.code || 'INTERNAL', neverConnected: msg.error?.neverConnected === true }));
       return;
     }
     if (msg.type === 'event') {

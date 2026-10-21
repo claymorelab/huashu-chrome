@@ -137,3 +137,17 @@ test('钉住的 label 随 hello 送到桥，再盖到发给扩展的命令上', 
   assert.equal(m.client, 'codex');
   ws.close(); ext.close(); bridge.close();
 });
+
+test('从来没连上过扩展时，NO_EXTENSION 提示去安装并带上安装地址', async () => {
+  const { hint } = await import('../src/mcp-server.js');
+  const install = hint({ code: 'NO_EXTENSION', neverConnected: true, message: 'x' });
+  assert.match(install, /安装并启用 Claymore Piko 扩展/);
+  assert.doesNotMatch(install, /重连/);
+  process.env.HUASHU_CHROME_INSTALL_URL = 'https://example.com/piko';
+  try {
+    assert.match(hint({ code: 'NO_EXTENSION', neverConnected: true, message: 'x' }), /https:\/\/example\.com\/piko/);
+  } finally {
+    delete process.env.HUASHU_CHROME_INSTALL_URL;
+  }
+  assert.match(hint({ code: 'NO_EXTENSION', message: 'x' }), /重连/);
+});

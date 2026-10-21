@@ -22,6 +22,9 @@ export const LOCK_FILE = path.join(HOME, 'bridge.lock');
 export const AUDIT_FILE = path.join(HOME, 'audit.jsonl');
 export const ALLOWLIST_FILE = path.join(HOME, 'allowlist.json');
 export const LOG_FILE = path.join(HOME, 'bridge.log');
+// 扩展第一次连上桥时写下。从来没连上过的「扩展不在」多半是用户还没装，
+// 提示应该是「去装」，而不是「点重连」。
+export const EXTENSION_SEEN_FILE = path.join(HOME, 'extension-seen');
 
 // 上游用 8899–8903。扩展按 8898 往下探（extension/offscreen.js），两套互不相交。
 export const DEFAULT_PORT = 8898;

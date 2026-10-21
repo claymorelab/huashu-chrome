@@ -788,7 +788,16 @@ export async function fetchPages(bridge, args) {
 }
 
 // 错误不只报「什么坏了」，还报「下一步该干嘛」——省掉 agent 一轮瞎试
-function hint(e) {
+// 宿主可以用 HUASHU_CHROME_INSTALL_URL 给出扩展的安装地址（商店上架后填商店链接）。
+function installHint(env = process.env) {
+  const url = String(env.HUASHU_CHROME_INSTALL_URL ?? '').trim();
+  return '用户的 Chrome 还没装 Claymore Piko 扩展（或从来没连上过）。别重试这条命令——'
+    + (url ? `请用户打开 ${url} 安装并启用 Claymore Piko 扩展` : '请用户在 Chrome 里安装并启用 Claymore Piko 扩展')
+    + '，装好后保持 Chrome 开着，再继续刚才的任务。';
+}
+
+export function hint(e) {
+  if (e.code === 'NO_EXTENSION' && e.neverConnected) return `[NO_EXTENSION] ${e.message}\n→ ${installHint()}`;
   const map = {
     // 老话术是「确认 Chrome 开着、扩展已启用，然后重试」，它把人引向了错误的动作：
     // 绝大多数 NO_EXTENSION 其实是「Chrome 把扩展的后台进程回收了，几秒后自己回来」，
