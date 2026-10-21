@@ -132,8 +132,8 @@ function noteBridgeVersion(v) {
   const level = compat({ ext: mine, cli: v });
   bridgeMismatch = (level === 'same' || level === 'patch') ? '' : v;
   chrome.action.setTitle({ title: bridgeMismatch
-    ? `huashu-chrome：${compatNote(level, { ext: mine, cli: v })}`
-    : 'huashu-chrome' });
+    ? `Claymore Piko：${compatNote(level, { ext: mine, cli: v })}`
+    : 'Claymore Piko' });
   setBadge(true);
 }
 
@@ -142,7 +142,7 @@ function noteBridgeVersion(v) {
 // 就是 offscreen 之前的那套。只在 offscreen 建不起来时才启用，两条腿
 // 同时连的话桥会看到两个扩展，而它「同时只认一个」，后来者会把前一个踢掉。
 
-const PORTS = [8899, 8900, 8901, 8902, 8903];
+const PORTS = [8898, 8897, 8896, 8895, 8894];   // 与上游 huashu-chrome 的 8899–8903 不相交，见 src/lib/paths.js
 const DIRECT_DEAD_MS = 45000;   // 和 offscreen 那条腿同一个判据：三拍没回音就是死了
 let directWs = null;
 let directTimer = null;
@@ -744,10 +744,10 @@ async function noteMarked(tabId, on) {
 //    但那种碰撞的后果只是多染一个组，比拆错用户的组轻得多。
 const groupKey = (sid) => `agentGroup:${sid}`;
 
-// 组名是品牌字不是彩色圆点 emoji（花叔定的：色块图标丑）。它同时是「这个组
+// 组名是品牌字不是彩色圆点 emoji（色块图标丑）。它同时是「这个组
 // 是我们建的」的指纹。旧版组名用过身份 emoji，验指纹时兼容一阵子——
 // 不兼容的话，升级前建的组会因为指纹对不上而永远摘不掉。
-const GROUP_TITLE = '花叔';
+const GROUP_TITLE = 'Piko';
 const groupTitleOk = (title, sid) => title === GROUP_TITLE || title === identityOf(sid).emoji;
 
 async function syncGroup(tabId, owners) {
@@ -2139,7 +2139,7 @@ const HANDLERS = {
   // 这条路由浏览器原生下载，不进内存、不进 context，还自带断点和大文件支持。
   // saveAs:false 是关键：不弹系统保存对话框（那是扩展够不着的东西）。
   async download(p) {
-    const filename = p.filename || `huashu-chrome/${Date.now()}-${(p.url.split('/').pop() || 'file').split('?')[0].slice(0, 60)}`;
+    const filename = p.filename || `claymore-piko/${Date.now()}-${(p.url.split('/').pop() || 'file').split('?')[0].slice(0, 60)}`;
     const dlId = await chrome.downloads.download({ url: p.url, filename, conflictAction: 'uniquify', saveAs: false });
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -2585,7 +2585,7 @@ const HANDLERS = {
     chrome.notifications?.create(`hc-ask-${Date.now()}`, {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
-      title: p.title || 'huashu-chrome 需要你搭把手',
+      title: p.title || 'Piko 需要你搭把手',
       message: String(p.prompt || '').slice(0, 180),
       priority: 2,
     }, () => void chrome.runtime.lastError);

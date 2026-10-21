@@ -477,7 +477,7 @@ const TOOLS = [
   {
     name: 'reload',
     description:
-      'Reload the huashu-chrome extension (chrome.runtime.reload()) so an updated build takes effect — ' +
+      'Reload the Claymore Piko extension (chrome.runtime.reload()) so an updated build takes effect — ' +
       'no manual chrome://extensions visit needed. ~2s; bridge auto-reconnects, tabs keep state. ' +
       'DISRUPTIVE: the extension is shared by every tab and every other agent session on this machine — ' +
       'anything mid-flight elsewhere gets cut. Only call right after installing/updating, or when ' +
@@ -549,7 +549,7 @@ export function sessionIdFromEnv(env = process.env) {
 export async function startMcpServer({ client = 'unknown' } = {}) {
   const bridge = new BridgeClient({ client, sessionId: sessionIdFromEnv() });
   const server = new Server(
-    { name: 'huashu-chrome', version: VERSION },
+    { name: 'piko-browser', version: VERSION },
     { capabilities: { tools: {} }, instructions: STRATEGY }
   );
 
@@ -563,7 +563,7 @@ export async function startMcpServer({ client = 'unknown' } = {}) {
     host = resolveHost({ clientInfo: server.getClientVersion(), flag: client });
     bridge.identify(host.client, host.label);
     audit({ ev: 'host', client: host.client, sid: bridge.sessionId, raw: host.raw, via: host.source });
-    console.error(`[huashu-chrome] 宿主：${host.label || host.client}（${host.source} = ${JSON.stringify(host.raw ?? client)}）`);
+    console.error(`[piko-browser] 宿主：${host.label || host.client}（${host.source} = ${JSON.stringify(host.raw ?? client)}）`);
     return host;
   };
 
@@ -784,7 +784,7 @@ function hint(e) {
     // 老话术让人去 chrome://extensions，而插件从来没消失过——那条路的终点是「重装」，
     // 重装恰好重启了扩展、连上了，于是反过来坐实了「插件消失了」这个误判（8-31 笔记）。
     NO_EXTENSION: '扩展没连上桥，桥已经替你等过一轮了。别再重试同一条命令——'
-      + '让用户点浏览器工具栏的 huashu-chrome 图标 → 「重连」（插件没消失，只是连接断了）；Chrome 没开就先开。',
+      + '让用户点浏览器工具栏的 Claymore Piko 图标 → 「重连」（插件没消失，只是连接断了）；Chrome 没开就先开。',
     STALE_SNAPSHOT: '页面已经变了，之前的 ref 全部作废。重新调用 snapshot，用新 ref 再点。',
     REF_NOT_FOUND: '这个 ref 在页面上找不到了。重新 snapshot。',
     NOT_INTERACTABLE: '元素当前不可点（被遮挡、隐藏或 disabled）。先 wait，或换一个目标。',
@@ -794,7 +794,7 @@ function hint(e) {
     TAB_DISCARDED: '标签页被 Chrome 回收了。navigate(action:"reload") 后重做这一步。',
     NO_TAB: '没有可用的标签页。先用 tabs(action:"new", url:…) 开一个。',
     TIMEOUT: '浏览器侧超时。页面可能还在加载——先 wait 再重试。',
-    NEEDS_L2: '这一步需要真实输入事件，但高保真模式被关了。让用户点开 huashu-chrome 扩展图标，'
+    NEEDS_L2: '这一步需要真实输入事件，但高保真模式被关了。让用户点开 Claymore Piko 扩展图标，'
       + '在「高保真模式」那一栏点「开启」——只需一次。',
     L2_BUSY: '真实输入事件用不了（多半是用户自己开着 DevTools，一个标签页只允许一个调试器）。'
       + '已经用普通事件完成了；如果结果不对，让用户关掉 DevTools 再试。',

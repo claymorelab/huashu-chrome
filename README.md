@@ -1,25 +1,26 @@
+Claymore Piko browser extension, based on [alchaincyf/huashu-chrome](https://github.com/alchaincyf/huashu-chrome) (MIT).
+
 <div align="center">
 
-# huashu-chrome
+# Claymore Piko 浏览器扩展
 
-<img src="https://raw.githubusercontent.com/alchaincyf/huashu-chrome/master/media/architecture.png" alt="系统原理图：一条命令穿过五个器官——npm 包 → CLI → MCP server → 本地桥 → Chrome 扩展，最后落在你真实浏览器的真实按钮上" width="100%">
+<img src="media/architecture.png" alt="系统原理图：一条命令穿过五个器官——npm 包 → CLI → MCP server → 本地桥 → Chrome 扩展，最后落在你真实浏览器的真实按钮上" width="100%">
 
 > *「工具返回『已点击』不算数，页面真的动了才算。」*
 
-[![npm](https://img.shields.io/npm/v/huashu-chrome?color=cb3837&logo=npm)](https://www.npmjs.com/package/huashu-chrome)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/alchaincyf/huashu-chrome?style=social)](https://github.com/alchaincyf/huashu-chrome)
+[![Upstream](https://img.shields.io/badge/upstream-huashu--chrome-555)](https://github.com/alchaincyf/huashu-chrome)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#安装)
 
 <br>
 
-**让任何 AI agent 操控你自己的 Chrome——带着你全部的登录态。**
+**让 Piko 和任何 AI agent 操控你自己的 Chrome——带着你全部的登录态。**
 
 <sub>一个 MCP server + 一个 Chrome 扩展，22 个浏览器工具。Claude Code、Codex CLI、Cursor、Gemini CLI、Cline、Windsurf 通用。</sub>
 
 <br>
 
-[看效果](#看效果) · [安装](#安装) · [22 个工具](#工具按网页只有三种信息载体来分) · [经验回流](#越用越快经验回流) · [安全](#安全) · [排错](#排错)
+[Claymore Piko 定制](#claymore-piko-定制) · [看效果](#看效果) · [安装](#安装) · [22 个工具](#工具按网页只有三种信息载体来分) · [经验回流](#越用越快经验回流) · [安全](#安全) · [排错](#排错)
 
 </div>
 
@@ -36,7 +37,38 @@ agent：（打开你已登录的 CRM，逐条填表提交）
 CLI 是入口（install / mcp / doctor），MCP server 是 agent 的接口，本地桥是 127.0.0.1 上的
 常驻路由器，Chrome 扩展是手。上图就是一条命令穿过它们的全程。
 
-**图解版完整说明书 → [huasheng.ai/huashu-chrome](https://huasheng.ai/huashu-chrome/)**
+---
+
+## Claymore Piko 定制
+
+这是 Claymore 维护的分支，和上游 huashu-chrome 可以装在同一台机器上，互不干扰：
+
+| | Claymore Piko | 上游 huashu-chrome |
+|---|---|---|
+| 扩展名称 | Claymore Piko | huashu-chrome |
+| 扩展 ID | `mdgjhgdcdiehjoinklgbgoabeaokeaim` | `foiljmaplphdfimfcnfdpekhdnfbgfbf` |
+| 桥端口 | 8898（扩展从 8898 往下探到 8894） | 8899–8903 |
+| 配置目录 | `~/.claymore-piko-browser` | `~/.huashu-chrome` |
+| MCP server 名 | `piko-browser` | `huashu-chrome` |
+| npm 包 / 命令 | `claymore-piko-browser` / `piko-browser` | `huashu-chrome` |
+
+本机的桥只接受 Claymore Piko 扩展（按 Origin 里的扩展 ID 判定），别的扩展连不上。
+
+**装扩展**：Chrome 应用商店版本上架后会提供一键安装链接；现在用手动加载——`chrome://extensions`
+→ 打开「开发者模式」→「加载已解压的扩展程序」，选仓库里的 `extension/` 文件夹。
+扩展 ID 由 `manifest.json` 里的公钥固定，手动加载也是同一个 ID。
+
+npm 包还没发布。发布之前，文中的 `npx claymore-piko-browser <命令>` 在仓库目录里换成
+`node src/cli.js <命令>`。
+
+**宿主（Piko）可用的环境变量**——名字沿用上游，方便对照：
+
+| 变量 | 作用 |
+|---|---|
+| `HUASHU_CHROME_HOME` | 配置目录（绝对路径）。同一账号的多个会话指向同一个目录，就共用一个桥 |
+| `HUASHU_CHROME_SESSION_ID` | 稳定的会话标识，决定这个会话的受控标签页槽 |
+| `HUASHU_CHROME_ASK` | 设为 `off` 时 `ask` 不弹浮条（无人值守） |
+| `HUASHU_CHROME_LEARNINGS_DIR` | 本机经验目录，默认在配置目录下的 `learnings/` |
 
 ---
 
@@ -73,9 +105,9 @@ CLI 是入口（install / mcp / doctor），MCP server 是 agent 的接口，本
 ## 为什么需要它
 
 浏览器控制这件事，现在的格局是：能拿到你真实登录态的，多半只给自家客户端用；
-对任何 agent 开放的，多半开的是一个干净的、没登录的浏览器。huashu-chrome 两头都要。
+对任何 agent 开放的，多半开的是一个干净的、没登录的浏览器。Claymore Piko 两头都要。
 
-| | **huashu-chrome** | Claude in Chrome | ChatGPT 扩展（Codex） | Playwright MCP | chrome-devtools-mcp | Browser Use |
+| | **Claymore Piko** | Claude in Chrome | ChatGPT 扩展（Codex） | Playwright MCP | chrome-devtools-mcp | Browser Use |
 |---|---|---|---|---|---|---|
 | 用你日常的 Chrome，带真实登录态 | ✅ 就是眼前这个 | ✅ | ✅ | ⚠️ 要走扩展模式 | ⚠️ Chrome 144+ 逐次授权 | ⚠️ Harness 接管才行 |
 | 任何支持 MCP 的 agent 都能接 | ✅ 20+ 家通用 | ❌ 只限 Anthropic 客户端 | ❌ Codex CLI 用不了 | ✅ | ✅ | ✅ |
@@ -93,7 +125,7 @@ CLI 是入口（install / mcp / doctor），MCP server 是 agent 的接口，本
 ## 安装
 
 ```bash
-npx huashu-chrome install
+npx claymore-piko-browser install
 ```
 
 一条命令：自动检测这台机器上装了哪些 agent、写好各自的 MCP 配置（动手前先备份，
@@ -118,9 +150,9 @@ npx huashu-chrome install
 ```json
 {
   "mcp": {
-    "huashu-chrome": {
+    "piko-browser": {
       "type": "local",
-      "command": ["npx", "-y", "huashu-chrome", "mcp", "--client", "opencode"],
+      "command": ["npx", "-y", "claymore-piko-browser", "mcp", "--client", "opencode"],
       "enabled": true
     }
   }
@@ -132,7 +164,7 @@ Windows若无法解析`npx`，可按本机安装方式改用`npx.cmd`。这是�
 已知客户端的Windows / macOS / Linux配置路径按`src/agents.json`匹配。装完验证：
 
 ```bash
-npx huashu-chrome doctor
+npx claymore-piko-browser doctor
 ```
 
 看到「握手正常 · Chrome 扩展在线」就成了。桥进程由 agent 首次调用时自动拉起
@@ -143,25 +175,25 @@ npx huashu-chrome doctor
 
 **Claude Code**
 ```bash
-claude mcp add huashu-chrome -- npx -y huashu-chrome mcp --client claude-code
+claude mcp add piko-browser -- npx -y claymore-piko-browser mcp --client claude-code
 ```
 
 **Codex CLI** — `~/.codex/config.toml`
 ```toml
-[mcp_servers.huashu-chrome]
+[mcp_servers.piko-browser]
 command = "npx"
-args = ["-y", "huashu-chrome", "mcp", "--client", "codex"]
+args = ["-y", "claymore-piko-browser", "mcp", "--client", "codex"]
 ```
 
 **Cursor / Gemini CLI / Windsurf / Claude Desktop** — 各自的 JSON 配置里加：
 ```json
-{ "mcpServers": { "huashu-chrome": { "command": "npx", "args": ["-y", "huashu-chrome", "mcp"] } } }
+{ "mcpServers": { "piko-browser": { "command": "npx", "args": ["-y", "claymore-piko-browser", "mcp"] } } }
 ```
 
 `--client` 可以不写、写错也没关系：侧栏和审计日志里显示的是宿主在 MCP 握手里
 自报的身份（Claude Code / Codex CLI / Gemini CLI / OpenClaw …），这个参数只在宿主没报时兜底。
 
-扩展：`npx huashu-chrome extension` 打印目录，然后 `chrome://extensions`
+扩展：`npx claymore-piko-browser extension` 打印目录，然后 `chrome://extensions`
 → 开发者模式 → 加载已解压的扩展程序。
 
 </details>
@@ -270,7 +302,7 @@ act 停在第 4 步 3/4：
   大麦、即刻、腾讯文档、Ollama，以及两个 canvas 游戏（`sudoku.com` / `flappybird.io`，
   它们是「棋盘不在 DOM 里」这类页面的样板）。已验证的接口名、墙、坑，
   每条都标了实测日期。升级版本就拿到新经验。
-- **本机经验**：`~/.huashu-chrome/learnings/`，agent 每次干活学到的新规律
+- **本机经验**：`~/.claymore-piko-browser/learnings/`，agent 每次干活学到的新规律
   自己存进去（新站摸清了门路、老站发现记录过时了），永远不会被升级覆盖。
   全在你自己的磁盘上，不上传。
 
@@ -279,7 +311,7 @@ agent 开工前查一次（`learnings {domain}`），收工时把非显而易见
 环境不一样，所以工具返回的每一份经验都带着同一句话：与页面实际不符时，
 以实际为准，然后把记录改对。查不到经验也不阻塞，按通用策略干就是了。
 
-摸清了一个新站？欢迎把 `~/.huashu-chrome/learnings/` 里的文件提 PR 到
+摸清了一个新站？欢迎把 `~/.claymore-piko-browser/learnings/` 里的文件提 PR 到
 [`docs/经验/`](docs/经验/)，让所有用户受益。**提之前记得先看一遍有没有把你自己的
 账号、行程、订单号写进去**——那个目录是 agent 自动写的，它不知道哪些字不该出门。
 
@@ -318,7 +350,7 @@ content script 派发的事件 `isTrusted` 永远是 false。四类场景因此�
 agent 全在后台标签页里干活，用户面前本来是一片安静的浏览器——他随手点开一页，
 不知道那页已经被某个会话认领了。所以每个会话都有一张工牌，同一套身份三处露出：
 
-![被操控的 Chrome 长什么样：彩色标签组、四边描边、呼吸光标、右下角驾驶舱、人工介入浮条；下方对比 agent 截图视角——幕帘挡住了给人看的一切](https://raw.githubusercontent.com/alchaincyf/huashu-chrome/master/media/visible.png)
+![被操控的 Chrome 长什么样：彩色标签组、四边描边、呼吸光标、右下角驾驶舱、人工介入浮条；下方对比 agent 截图视角——幕帘挡住了给人看的一切](media/visible.png)
 
 | 露出位置 | 长什么样 | 解决什么 |
 |---|---|---|
@@ -337,7 +369,7 @@ agent 自己的截图里看不到任何标记（截图幕帘），它不会把�
 ```
 Claude Code ──stdio──┐
 Codex CLI  ──stdio──┤→ MCP Server（每会话一个，无状态）
-Cursor     ──stdio──┘         │ ws://127.0.0.1:8899
+Cursor     ──stdio──┘         │ ws://127.0.0.1:8898
                     桥 Daemon（单例：路由 · 授权 · 审计）
                               │ Origin 白名单
                       Chrome 扩展 MV3
@@ -350,7 +382,7 @@ L2 只在需要真实事件、后台截图、或页面 CSP 拦下求值时才接
 
 一条 `click` 从 agent 到页面再回到 agent 的完整旅程（8 站，全程 127.0.0.1）：
 
-![信号追踪：agent → stdio → MCP server → WebSocket+token → 桥（白名单裁决/审计/身份章）→ 扩展 → 页面定位与真实点击 → 效果证据 → 快照原路返回](https://raw.githubusercontent.com/alchaincyf/huashu-chrome/master/media/journey.png)
+![信号追踪：agent → stdio → MCP server → WebSocket+token → 桥（白名单裁决/审计/身份章）→ 扩展 → 页面定位与真实点击 → 效果证据 → 快照原路返回](media/journey.png)
 
 ### 多会话隔离
 
@@ -359,7 +391,7 @@ L2 只在需要真实事件、后台截图、或页面 CSP 拦下求值时才接
 不该跟着一起没。新会话想用一个还有主的页面会被拦下并给出三条出路；主人已经断开的
 页面才可以继承。协议细节见 [`docs/协议.md`](docs/协议.md)。
 
-![多会话隔离：会话 A 紫色描边、会话 B 绿色描边各管各页；两个会话踩同一页时边框变双色告警条纹](https://raw.githubusercontent.com/alchaincyf/huashu-chrome/master/media/sessions.png)
+![多会话隔离：会话 A 紫色描边、会话 B 绿色描边各管各页；两个会话踩同一页时边框变双色告警条纹](media/sessions.png)
 
 外观（会话色）是会话 id 的纯函数，所以它继承了会话身份那份跨桥重启的稳定性——
 桥抖一下，页面上的标记不会莫名换色。同一个页面被两个会话占着时，边框变成双色斜条纹、
@@ -393,8 +425,8 @@ offscreen 万一建不起来，扩展不能整个哑掉。
    抬进模型的注意力里。
 2. **敏感动作不自动升级**——提交 / 支付 / 删除 / 发布这类目标，即使普通事件毫无效果，
    也不会自动改用真实事件重试，避免重复执行。正则 + DOM 特征，不问模型。
-3. **全量审计**——每条命令落 `~/.huashu-chrome/audit.jsonl`，输入的文本做脱敏
-   （密码按输入框类型判断，跟长度无关）。`npx huashu-chrome audit` 随时查。
+3. **全量审计**——每条命令落 `~/.claymore-piko-browser/audit.jsonl`，输入的文本做脱敏
+   （密码按输入框类型判断，跟长度无关）。`npx claymore-piko-browser audit` 随时查。
 4. **连接边界**——桥只接受 `chrome-extension://` 来源的扩展连接，网页想连桥直接被拒；
    Node 侧 agent 走随桥启动轮换的 token。
 5. **受控标签页漂移警告**——标签页被你自己或站点导航走时，读写操作会在返回最前面
@@ -444,14 +476,14 @@ offscreen 万一建不起来，扩展不能整个哑掉。
 ## 排错
 
 ```bash
-npx huashu-chrome doctor            # 一条命令查完整条链路
-npx huashu-chrome audit -n 50       # 看 agent 到底点了什么
-npx huashu-chrome audit --stats     # 真实 agent 的用法统计：回合空档、哪类调用最多、哪些连着出现
+npx claymore-piko-browser doctor            # 一条命令查完整条链路
+npx claymore-piko-browser audit -n 50       # 看 agent 到底点了什么
+npx claymore-piko-browser audit --stats     # 真实 agent 的用法统计：回合空档、哪类调用最多、哪些连着出现
 ```
 
 | 症状 | 原因 | 处理 |
 |---|---|---|
-| `NO_EXTENSION` | 扩展到桥的那条连接断了（插件本身没消失） | 点工具栏的 huashu-chrome 图标 → 「重连」；Chrome 没开就先开；只有改过扩展代码才需要去 `chrome://extensions` 重载 |
+| `NO_EXTENSION` | 扩展到桥的那条连接断了（插件本身没消失） | 点工具栏的 Claymore Piko 图标 → 「重连」；Chrome 没开就先开；只有改过扩展代码才需要去 `chrome://extensions` 重载 |
 | `NEEDS_L2` | 这一步要真实输入事件，但没授权 | 点开扩展图标，按一下「启用高保真模式」 |
 | `L2_BUSY` | 调试器被占用 | 多半是你自己开着 DevTools——一个标签页只允许一个调试器。已自动降级 |
 | `STALE_SNAPSHOT` | 页面变了，ref 全作废 | 正常现象，agent 会自己重拍 |
@@ -503,7 +535,9 @@ huashu-chrome/
 └── test/                   # 协议与安全边界（无需浏览器）+ 本地靶场回归
 ```
 
-## 关于作者
+## 上游作者
+
+本项目基于花叔的 [huashu-chrome](https://github.com/alchaincyf/huashu-chrome)。
 
 **花叔 Huashu** — AI Native Coder，独立开发者，代表作：小猫补光灯（App Store 付费榜 Top1）、女娲.skill、huashu-design
 
@@ -518,17 +552,17 @@ huashu-chrome/
 
 ## 许可证
 
-MIT — 随便用，随便改，随便造。
+MIT。保留上游版权声明：Copyright (c) 2026 花叔 (alchaincyf)；Claymore 的修改 Copyright (c) 2026 Claymore。见 [LICENSE](LICENSE)。
 
 ---
 
 <div align="center">
 
-MIT License © [花叔 Huashu](https://github.com/alchaincyf)
+MIT License © [花叔 Huashu](https://github.com/alchaincyf) · © Claymore
 
 <br>
 
-<sub>作者的其他项目 · also by 花叔</sub>
+<sub>上游作者的其他项目 · also by 花叔</sub>
 
 [huashu-mac-use](https://github.com/alchaincyf/huashu-mac-use) · [女娲.skill](https://github.com/alchaincyf/nuwa-skill) · [huashu-design](https://github.com/alchaincyf/huashu-design) · [达尔文.skill](https://github.com/alchaincyf/darwin-skill) · [全部 skill 总目录](https://github.com/alchaincyf/huashu-skills)
 
@@ -538,13 +572,13 @@ MIT License © [花叔 Huashu](https://github.com/alchaincyf)
 
 ## English
 
-**huashu-chrome** lets any MCP-capable AI agent drive *your own* Chrome — with all your logins
+**Claymore Piko** (a fork of huashu-chrome) lets Piko and any MCP-capable AI agent drive *your own* Chrome — with all your logins
 already in it. It is an MCP server plus a Chrome extension, 22 browser tools, installed with one
 command. No API keys, no separate headless browser, no re-login, no captcha farm: the agent acts
 as you, in the browser you already have open.
 
 Works with Claude Code, Codex CLI, Cursor, Gemini CLI, Cline, Windsurf and ~20 other agents
-(`npx huashu-chrome install` detects what is on your machine and writes each one's MCP config).
+(`npx claymore-piko-browser install` detects what is on your machine and writes each one's MCP config).
 
 Four ideas that make it different from a headless-browser MCP:
 
@@ -559,17 +593,19 @@ Four ideas that make it different from a headless-browser MCP:
   stop on the first no-op.
 - **Learnings compound.** Site knowledge ships with the package (`docs/经验/`, ~20 sites with
   verified endpoints, walls and dead ends, each dated) and the agent writes new findings to
-  `~/.huashu-chrome/learnings/` on your own disk, never uploaded. One Feishu Bitable task took 281
+  `~/.claymore-piko-browser/learnings/` on your own disk, never uploaded. One Feishu Bitable task took 281
   calls and 54 minutes to figure out cold; under 10 calls the second time.
 - **Safety lives outside the model.** Page text is demoted to `<page-content untrusted>`; sensitive
   targets (submit / pay / delete / publish) never auto-retry with trusted events; a payment
   confirmation card lives *in the extension*, where the agent has no parameter to skip it; every
-  command is audited to `~/.huashu-chrome/audit.jsonl` with credentials redacted by key name.
+  command is audited to `~/.claymore-piko-browser/audit.jsonl` with credentials redacted by key name.
   What is **not** done is stated plainly in the 安全 section — money is gated, deletion is not.
 
 You can also see it working: controlled tabs join a colored tab group, the page gets a matching
 outline, a breathing cursor and a small cockpit — all of which are invisible to the agent's own
 screenshots, so it never mistakes our overlay for a page element.
 
-**Install**: `npx huashu-chrome install`, then click through the extension install (browsers do not
-let scripts do that part). Verify with `npx huashu-chrome doctor`.
+**Install**: `npx claymore-piko-browser install`, then load the extension unpacked from
+`chrome://extensions` (Developer mode → Load unpacked → `extension/`; the Chrome Web Store link comes later;
+browsers do not let scripts do that part). Extension ID: `mdgjhgdcdiehjoinklgbgoabeaokeaim`; bridge port 8898;
+config dir `~/.claymore-piko-browser`. Verify with `npx claymore-piko-browser doctor`.

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 import { startBridge } from '../src/bridge.js';
 import { VERSION } from '../src/lib/version.js';
+import { EXTENSION_ORIGIN } from '../src/lib/paths.js';
 
 const PORT = 8993;
 const URL = `ws://127.0.0.1:${PORT}`;
@@ -21,7 +22,7 @@ before(async () => {
 after(() => bridge.close());
 
 async function ext(instanceId, { answerPing }) {
-  const ws = new WebSocket(URL, { origin: 'chrome-extension://testid' });
+  const ws = new WebSocket(URL, { origin: EXTENSION_ORIGIN });
   await new Promise((r) => ws.on('open', r));
   const pings = [];
   ws.on('message', (d) => {

@@ -79,7 +79,7 @@ export class BridgeClient {
       if (!spawned) spawned = tryStartBridge();
       await sleep(250);
     }
-    throw new Error('连不上 huashu-chrome 桥。跑 `huashu-chrome doctor` 看看哪儿卡住了');
+    throw new Error('连不上 Claymore Piko 的浏览器桥。跑 `npx claymore-piko-browser doctor` 看看哪儿卡住了');
   }
 
   #open(info) {

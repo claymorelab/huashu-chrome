@@ -19,7 +19,7 @@
 // 整个扩展失联（踩过：`chrome.runtime.getManifest is not a function`）。
 // 所以握手要用的身份（扩展 id、版本号）一律问 SW 要，连接状态也回报给 SW 去存。
 
-const PORTS = [8899, 8900, 8901, 8902, 8903];
+const PORTS = [8898, 8897, 8896, 8895, 8894];   // 与上游 huashu-chrome 的 8899–8903 不相交，见 src/lib/paths.js
 const PING_MS = 15000;          // 留足余量：30 秒空闲线，20 秒太贴边
 const PROBE_MS = 1500;
 const MAX_BACKOFF = 15000;

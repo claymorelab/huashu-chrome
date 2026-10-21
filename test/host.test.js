@@ -78,6 +78,12 @@ test('HUASHU_CHROME_SESSION_ID 固定会话标识，空值回到默认推断', a
 test('HUASHU_CHROME_HOME 只接受绝对路径', async () => {
   const { homeDir } = await import('../src/lib/paths.js');
   assert.equal(homeDir({ HUASHU_CHROME_HOME: '/srv/state/huashu-chrome' }), '/srv/state/huashu-chrome');
-  assert.match(homeDir({ HUASHU_CHROME_HOME: 'relative/dir' }), /\.huashu-chrome$/);
-  assert.match(homeDir({}), /\.huashu-chrome$/);
+  assert.match(homeDir({ HUASHU_CHROME_HOME: 'relative/dir' }), /\.claymore-piko-browser$/);
+  assert.match(homeDir({}), /\.claymore-piko-browser$/);
+});
+
+test('默认端口和目录都避开上游 huashu-chrome', async () => {
+  const { DEFAULT_PORT, homeDir } = await import('../src/lib/paths.js');
+  assert.equal(DEFAULT_PORT, 8898);
+  assert.doesNotMatch(homeDir({}), /\.huashu-chrome$/);
 });

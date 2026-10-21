@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 import { startBridge } from '../src/bridge.js';
 import { VERSION } from '../src/lib/version.js';
+import { EXTENSION_ORIGIN } from '../src/lib/paths.js';
 
 const PORT = 8988;
 const TOKEN = 'b'.repeat(64);
@@ -40,7 +41,7 @@ function nextOf(ws, type, ms = 3000) {
 
 // 伪装一个 Chrome 实例
 async function ext({ instanceId, headless = false, chrome = '152.0.0.0' }) {
-  const ws = new WebSocket(URL, { origin: 'chrome-extension://testid' });
+  const ws = new WebSocket(URL, { origin: EXTENSION_ORIGIN });
   await new Promise((r) => ws.on('open', r));
   // 收集器必须在握手**之前**挂上：桥补发排队命令是紧接着 welcome 发的，
   // 等 await welcome 之后再挂就漏掉了（真扩展的 onmessage 也是一直挂着的）
@@ -183,7 +184,7 @@ test('拔插重连 —— 全断期间的命令排队，实例回来就补发', 
 });
 
 test('老扩展不报 instanceId —— 退回按扩展 id 认，不跟新扩展混着算', async () => {
-  const ws1 = new WebSocket(URL, { origin: 'chrome-extension://oldid' });
+  const ws1 = new WebSocket(URL, { origin: EXTENSION_ORIGIN });
   await new Promise((r) => ws1.on('open', r));
   const w1 = nextOf(ws1, 'welcome');
   ws1.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'oldid', version: VERSION, v: 1 }));
@@ -191,7 +192,7 @@ test('老扩展不报 instanceId —— 退回按扩展 id 认，不跟新扩展
   const closed1 = new Promise((r) => ws1.on('close', (c) => r(c)));
 
   // 同一个 extId 的老扩展再连 —— 行为和单槽时代一样：替换
-  const ws2 = new WebSocket(URL, { origin: 'chrome-extension://oldid' });
+  const ws2 = new WebSocket(URL, { origin: EXTENSION_ORIGIN });
   await new Promise((r) => ws2.on('open', r));
   const w2 = nextOf(ws2, 'welcome');
   ws2.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'oldid', version: VERSION, v: 1 }));
