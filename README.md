@@ -67,6 +67,7 @@ npm 包还没发布。发布之前，文中的 `npx claymore-piko-browser <命�
 |---|---|
 | `HUASHU_CHROME_HOME` | 配置目录（绝对路径）。同一账号的多个会话指向同一个目录，就共用一个桥 |
 | `HUASHU_CHROME_SESSION_ID` | 稳定的会话标识，决定这个会话的受控标签页槽 |
+| `HUASHU_CHROME_LABEL` | 会话显示名（Piko 里填 Bot 名）。压过从 MCP 握手认出来的宿主名，标签组组名和侧栏里显示的就是它；不设时用宿主名，认不出宿主就叫「Piko」。组名超过 12 个字符会截断 |
 | `HUASHU_CHROME_ASK` | 设为 `off` 时 `ask` 不弹浮条（无人值守） |
 | `HUASHU_CHROME_LEARNINGS_DIR` | 本机经验目录，默认在配置目录下的 `learnings/` |
 

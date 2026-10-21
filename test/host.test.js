@@ -87,3 +87,53 @@ test('默认端口和目录都避开上游 huashu-chrome', async () => {
   assert.equal(DEFAULT_PORT, 8898);
   assert.doesNotMatch(homeDir({}), /\.huashu-chrome$/);
 });
+
+test('HUASHU_CHROME_LABEL 钉住显示名：宿主识别只改 client，不改 label', async () => {
+  const { labelFromEnv } = await import('../src/mcp-server.js');
+  assert.equal(labelFromEnv({ HUASHU_CHROME_LABEL: ' 小红书运营 ' }), '小红书运营');
+  assert.equal(labelFromEnv({ HUASHU_CHROME_LABEL: '  ' }), undefined);
+  assert.equal(labelFromEnv({}), undefined);
+
+  const pinned = new BridgeClient({ client: 'unknown', label: labelFromEnv({ HUASHU_CHROME_LABEL: '小红书运营' }) });
+  assert.equal(pinned.identify('codex', 'Codex CLI'), true);
+  assert.equal(pinned.client, 'codex', '审计用的 client 仍按宿主识别');
+  assert.equal(pinned.label, '小红书运营');
+
+  // 没钉的照旧由宿主识别填
+  const free = new BridgeClient({ client: 'unknown', label: labelFromEnv({}) });
+  free.identify('codex', 'Codex CLI');
+  assert.equal(free.label, 'Codex CLI');
+});
+
+test('钉住的 label 随 hello 送到桥，再盖到发给扩展的命令上', async () => {
+  const { startBridge } = await import('../src/bridge.js');
+  const { EXTENSION_ORIGIN } = await import('../src/lib/paths.js');
+  const { default: WebSocket } = await import('ws');
+  const port = 8994, token = 'c'.repeat(64);
+  const bridge = startBridge({ port, token, writeInfo: false });
+  await bridge.ready;
+  const ext = new WebSocket(`ws://127.0.0.1:${port}`, { origin: EXTENSION_ORIGIN });
+  const cmd = new Promise((resolve) => ext.on('message', (d) => {
+    const m = JSON.parse(d.toString());
+    if (m.type !== 'cmd') return;
+    ext.send(JSON.stringify({ type: 'res', id: m.id, __k: m.__k, ok: true, data: {} }));
+    resolve(m);
+  }));
+  await new Promise((r) => ext.on('open', r));
+  const welcomed = new Promise((r) => ext.once('message', r));
+  ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'piko', v: 1 }));
+  await welcomed;
+
+  const c = new BridgeClient({ client: 'unknown', label: '小红书运营' });
+  c.identify('codex', 'Codex CLI');
+  // connect() 走真实配置目录里的 bridge.json，测试不碰它：用 rpc.js 同一个 hello 形状连测试桥
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  await new Promise((r) => ws.on('open', r));
+  ws.send(JSON.stringify({ type: 'hello', role: 'agent', token, client: c.client, label: c.label, sessionId: c.sessionId, v: 1 }));
+  await new Promise((r) => ws.once('message', r));
+  ws.send(JSON.stringify({ type: 'cmd', id: 'c1', cmd: 'snapshot', params: {} }));
+  const m = await cmd;
+  assert.equal(m.label, '小红书运营');
+  assert.equal(m.client, 'codex');
+  ws.close(); ext.close(); bridge.close();
+});

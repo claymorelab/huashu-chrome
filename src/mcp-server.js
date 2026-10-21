@@ -546,8 +546,16 @@ export function sessionIdFromEnv(env = process.env) {
   return value || undefined;
 }
 
+// HUASHU_CHROME_LABEL 是宿主给这个会话起的显示名——Piko 填的是 Bot 的名字。
+// 它压过从 MCP initialize 里认出来的宿主名（「Codex CLI」）：同一个宿主下跑着
+// 好几个 Bot，用户要在标签组和侧栏里认的是 Bot，不是宿主程序。
+export function labelFromEnv(env = process.env) {
+  const value = String(env.HUASHU_CHROME_LABEL ?? '').trim();
+  return value || undefined;
+}
+
 export async function startMcpServer({ client = 'unknown' } = {}) {
-  const bridge = new BridgeClient({ client, sessionId: sessionIdFromEnv() });
+  const bridge = new BridgeClient({ client, sessionId: sessionIdFromEnv(), label: labelFromEnv() });
   const server = new Server(
     { name: 'piko-browser', version: VERSION },
     { capabilities: { tools: {} }, instructions: STRATEGY }
@@ -563,7 +571,7 @@ export async function startMcpServer({ client = 'unknown' } = {}) {
     host = resolveHost({ clientInfo: server.getClientVersion(), flag: client });
     bridge.identify(host.client, host.label);
     audit({ ev: 'host', client: host.client, sid: bridge.sessionId, raw: host.raw, via: host.source });
-    console.error(`[piko-browser] 宿主：${host.label || host.client}（${host.source} = ${JSON.stringify(host.raw ?? client)}）`);
+    console.error(`[piko-browser] 宿主：${bridge.label || host.label || host.client}（${host.source} = ${JSON.stringify(host.raw ?? client)}）`);
     return host;
   };
 

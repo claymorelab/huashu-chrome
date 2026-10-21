@@ -12,7 +12,7 @@ import * as cdp from './cdp.js';
 import { compat, compatNote } from './compat.js';
 import { matchChallenge, hostOf, hostMatches, L2_ORIGINS_SEED } from './risk.js';
 import { CRED_URL, redactCreds } from './redact.js';
-import { identityOf, stripMarkPrefix } from './identity.js';
+import { identityOf, stripMarkPrefix, groupTitleFor } from './identity.js';
 import { validateScript, condText, repeatMax, EXEC_BUDGET, collectRefs, toRecipe } from './script.js';
 
 // ---------- 连接层 ----------
@@ -300,7 +300,7 @@ async function onMessage(msg) {
     // 第一条命令刷标记时会读到没有自己的旧名单——正是当年那个落盘竞态
     // 显示名优先用桥盖的 label（宿主自报的真名，见 src/lib/host.js）；
     // 老桥不盖 label 就退回 client slug，identity.js 会把它机械美化。
-    await noteSession(msg.sid, msg.label || msg.client, msg.live);
+    await noteSession(msg.sid, msg.label || msg.client, msg.live, msg.label);
     // 缺省 tabId 在这里统一解析成具体 tabId（会话级槽），handler 拿到的永远是实值。
     // ctx 只在本函数内现场传——SW 里两条命令的 await 会交错，绝不能用模块级变量存「当前消息」
     const ctx = { sid: msg.sid, live: msg.live, adopted: false };
@@ -611,19 +611,32 @@ async function conflictNote(tabId, sid, ctx) {
 const LIVE_SIDS = 'liveSids';                     // storage.session：此刻还连着的会话
 const MARKED_TABS = 'markedTabs';                 // storage.session：此刻贴着标记的页
 const sidClientKey = (sid) => `sidClient:${sid}`; // storage.session：sid → client 名
+const sidLabelKey = (sid) => `sidLabel:${sid}`;   // storage.session：sid → 宿主给的显示名（Piko 里是 Bot 名）
 
 const markEnabled = async () => !(await chrome.storage.local.get('markDisabled')).markDisabled;
 
 // 每条命令都带着 sid / client / live 过来，顺手记下来。
 // popup 要显示「谁在控哪一页」，而它自己够不着桥。
-async function noteSession(sid, client, live) {
+async function noteSession(sid, client, live, label) {
   const patch = {};
   if (sid && client) patch[sidClientKey(sid)] = client;
+  if (sid && label) patch[sidLabelKey(sid)] = label;
   if (Array.isArray(live)) patch[LIVE_SIDS] = live;
   if (Object.keys(patch).length) await chrome.storage.session.set(patch).catch(() => {});
 }
 
 const liveList = async () => (await chrome.storage.session.get(LIVE_SIDS))[LIVE_SIDS] || [];
+
+// 会话的外观（identity.js）加上宿主给的显示名。有显示名就原样用，不过 prettyClient
+// 的美化——「小红书运营」「my-bot」是用户起的名字，改大小写、拆连字符都是改错。
+async function identitiesOf(sids) {
+  const got = await chrome.storage.session.get(sids.flatMap((sid) => [sidClientKey(sid), sidLabelKey(sid)]));
+  return sids.map((sid) => {
+    const id = identityOf(sid, got[sidClientKey(sid)]);
+    const label = got[sidLabelKey(sid)];
+    return label ? { ...id, label, named: true } : id;
+  });
+}
 
 // 这个标签页此刻的主人们。只算**还连着**的会话——判据和 liveOwnersOf 一致：
 // 已结束的会话留下的槽不算数，否则关掉一个终端窗口之后，它的标记会永远挂在那儿。
@@ -639,8 +652,7 @@ async function ownersOfTab(tabId) {
   const all = await chrome.storage.local.get(null);
   const sids = sidsOnTab(all, tabId).filter((sid) => lives.has(sid));
   if (!sids.length) return [];
-  const clients = await chrome.storage.session.get(sids.map(sidClientKey));
-  return sids.map((sid) => identityOf(sid, clients[sidClientKey(sid)]));
+  return identitiesOf(sids);
 }
 
 // 判据必须是「收到了 mark.js 的回执」，不能是「sendMessage 没报错」：
@@ -744,11 +756,11 @@ async function noteMarked(tabId, on) {
 //    但那种碰撞的后果只是多染一个组，比拆错用户的组轻得多。
 const groupKey = (sid) => `agentGroup:${sid}`;
 
-// 组名是品牌字不是彩色圆点 emoji（色块图标丑）。它同时是「这个组
-// 是我们建的」的指纹。旧版组名用过身份 emoji，验指纹时兼容一阵子——
+// 组名是这个会话的显示名（Piko 里就是 Bot 的名字），宿主没给就叫「Piko」。
+// 它同时是「这个组是我们建的」的指纹。旧版组名用过身份 emoji，验指纹时兼容一阵子——
 // 不兼容的话，升级前建的组会因为指纹对不上而永远摘不掉。
-const GROUP_TITLE = 'Piko';
-const groupTitleOk = (title, sid) => title === GROUP_TITLE || title === identityOf(sid).emoji;
+const groupTitleOfSid = async (sid) => groupTitleFor((await chrome.storage.session.get(sidLabelKey(sid)))[sidLabelKey(sid)]);
+const groupTitleOk = (title, sid, expected) => title === expected || title === identityOf(sid).emoji;
 
 async function syncGroup(tabId, owners) {
   try {
@@ -765,7 +777,7 @@ async function syncGroup(tabId, owners) {
       for (const [sid, gid] of ours) {
         if (gid !== tab.groupId) continue;
         const g = await chrome.tabGroups.get(gid).catch(() => null);
-        if (g && groupTitleOk(g.title, sid)) await chrome.tabs.ungroup(tabId);
+        if (g && groupTitleOk(g.title, sid, await groupTitleOfSid(sid))) await chrome.tabs.ungroup(tabId);
         return;
       }
       return;
@@ -773,6 +785,7 @@ async function syncGroup(tabId, owners) {
 
     // 多主时跟第一个——组只有一个，双色条纹画不进标签栏；页内边框负责说清「有两个主」
     const o = owners[0];
+    const title = groupTitleFor(o.named ? o.label : '');
     const stored = ours.get(o.sid);
     if (tab.groupId !== -1) {
       if (tab.groupId === stored) return;                         // 已经在对的组里
@@ -783,13 +796,13 @@ async function syncGroup(tabId, owners) {
     let gid = null;
     if (stored !== undefined) {
       const g = await chrome.tabGroups.get(stored).catch(() => null);
-      if (g && g.windowId === tab.windowId && groupTitleOk(g.title, o.sid)) gid = stored;
+      if (g && g.windowId === tab.windowId && groupTitleOk(g.title, o.sid, title)) gid = stored;
     }
     if (gid !== null) {
       await chrome.tabs.group({ tabIds: tabId, groupId: gid });
     } else {
       gid = await chrome.tabs.group({ tabIds: tabId });
-      await chrome.tabGroups.update(gid, { title: GROUP_TITLE, color: o.group });
+      await chrome.tabGroups.update(gid, { title, color: o.group });
       await chrome.storage.local.set({ [groupKey(o.sid)]: gid });
     }
   } catch { /* 标签页正被拖动/已关、API 不可用——都不是命令的错 */ }
@@ -2810,15 +2823,15 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
     (async () => {
       try {
         const [all, lives] = await Promise.all([chrome.storage.local.get(null), liveList()]);
-        const clients = await chrome.storage.session.get(lives.map(sidClientKey));
+        const ids = await identitiesOf(lives);
         const rows = [];
-        for (const sid of lives) {
+        for (const [i, sid] of lives.entries()) {
           const tabId = all[agentTabKey(sid)];
           let title = '';
           // 标题里的 emoji 前缀是我们自己加的，这一行左边已经有色点了，
           // 再带一次只是噪音
           if (tabId) title = await chrome.tabs.get(tabId).then((t) => stripMarkPrefix(t.title) || t.url || '').catch(() => '');
-          rows.push({ ...identityOf(sid, clients[sidClientKey(sid)]), tabId: title ? tabId : null, title });
+          rows.push({ ...ids[i], tabId: title ? tabId : null, title });
         }
         sendResponse({ sessions: rows, enabled: await markEnabled() });
       } catch {
