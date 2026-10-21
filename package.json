@@ -1,6 +1,6 @@
 {
   "name": "claymore-piko-browser",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Claymore Piko 浏览器扩展：让 Piko 和任何 AI agent 操控你自己的 Chrome——带着全部登录态。基于 alchaincyf/huashu-chrome（MIT）。",
   "type": "module",
   "bin": {

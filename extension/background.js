@@ -2731,11 +2731,14 @@ chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() =>
 
 // 从商店装好扩展的人，以前落地后什么都看不到——引导只存在于终端那条路上。
 // 首装时打开欢迎页，它会实时探测本地端，连上就变绿。更新不打扰。
-// 用 --load-extension 预装（云端 Home 的浏览器）每次启动都算首装，那里不弹。
+// 只弹一次：用 --load-extension 预装（云端 Home 的浏览器）时，Chromium 每次启动
+// 都触发 onInstalled，reason 和 installType 都靠不住，靠扩展自己的记录。
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason !== 'install') return;
-  chrome.management.getSelf().then((self) => {
-    if (self.installType !== 'development') return chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+  chrome.storage.local.get('welcomed').then(({ welcomed }) => {
+    if (welcomed) return;
+    return chrome.storage.local.set({ welcomed: true })
+      .then(() => chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') }));
   }).catch(() => {});
 });
 
