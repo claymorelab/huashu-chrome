@@ -2742,9 +2742,8 @@ chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() =>
 
 // 从商店装好扩展的人，以前落地后什么都看不到——引导只存在于终端那条路上。
 // 首装时打开欢迎页，它会实时探测本地端，连上就变绿。更新不打扰。
-// 用 --load-extension 预装（云端 Home 的浏览器）时，Chromium 每次启动都当成
-// 全新安装：reason 是 install，扩展存储也被清空，自己记的「弹过了」留不住。
-// 预装方在扩展目录里放一个 preinstalled 标记文件，带着它就不弹。
+// 云端 Home 的浏览器预装的是 scripts/pack-cloud-crx.mjs 打的 CRX，包里带一个
+// preinstalled 标记文件，带着它就不弹：那台浏览器没有人在看欢迎页。
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason !== 'install') return;
   fetch(chrome.runtime.getURL('preinstalled')).then((r) => r.ok, () => false).then((preinstalled) => {

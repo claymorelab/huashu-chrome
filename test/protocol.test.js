@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 import { startBridge } from '../src/bridge.js';
 import { VERSION, EXT_VERSION } from '../src/lib/version.js';
-import { EXTENSION_ID, EXTENSION_ORIGIN } from '../src/lib/paths.js';
+import { EXTENSION_ID, EXTENSION_ORIGIN, CLOUD_EXTENSION_ID } from '../src/lib/paths.js';
 
 const PORT = 8987;
 const TOKEN = 'a'.repeat(64);
@@ -53,11 +53,13 @@ test('只放 Claymore Piko 扩展进来：别的扩展（包括上游 huashu-chr
     const ws = open({ origin });
     await assert.rejects(firstMessage(ws), (e) => /403/.test(e.message), origin);
   }
-  const ws = open({ origin: EXTENSION_ORIGIN });
-  ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', role: 'extension', extId: EXTENSION_ID, v: 1 })));
-  const m = await firstMessage(ws);
-  assert.equal(m.type, 'welcome');
-  ws.close();
+  for (const id of [EXTENSION_ID, CLOUD_EXTENSION_ID]) {
+    const ws = open({ origin: `chrome-extension://${id}` });
+    ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', role: 'extension', extId: id, v: 1 })));
+    const m = await firstMessage(ws);
+    assert.equal(m.type, 'welcome', id);
+    ws.close();
+  }
 });
 
 test('桥认的扩展 ID 就是 manifest 公钥算出来的那个', async () => {
