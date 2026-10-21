@@ -17,7 +17,6 @@ Claymore Piko is a browser extension that lets the user's own AI assistant (the 
 
 **Control.** The user can disconnect, disable or remove the extension at any time. Removing the extension and deleting `~/.claymore-piko-browser` removes all local data. Payment buttons always require the user's confirmation, and the agent cannot skip that check.
 
-**Source.** Claymore Piko is open source (MIT), based on alchaincyf/huashu-chrome: https://github.com/claymorelab/huashu-chrome
 
 ## 中文
 
@@ -33,5 +32,3 @@ Claymore Piko 是一个浏览器扩展：让用户自己的 AI 助手（Claymore
 **我们不做什么。** 没有统计分析、没有遥测、没有广告、没有跟踪，不出售或转让数据给第三方。除非用户的 agent 被要求在其中工作，扩展不读取用户的其他标签页。
 
 **用户的控制。** 用户随时可以断开、停用或移除扩展。移除扩展并删除 `~/.claymore-piko-browser` 即删除全部本地数据。付款类按钮一律需要用户确认，agent 无法跳过。
-
-**源代码。** Claymore Piko 开源（MIT），基于 alchaincyf/huashu-chrome：https://github.com/claymorelab/huashu-chrome
