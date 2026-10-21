@@ -22,7 +22,10 @@
 const PORTS = [8898, 8897, 8896, 8895, 8894];   // 与上游 huashu-chrome 的 8899–8903 不相交，见 src/lib/paths.js
 const PING_MS = 15000;          // 留足余量：30 秒空闲线，20 秒太贴边
 const PROBE_MS = 1500;
-const MAX_BACKOFF = 15000;
+// 桥不在时（冷启动、空闲退出后重新拉起）每 2 秒探一次。以前退避到 15 秒，
+// agent 拉起新桥后常要多等一整轮才连上，第一条命令就排在这段空档里。
+// 五个本机端口并行探，连不上的立刻被拒，2 秒一轮几乎没有开销。
+const MAX_BACKOFF = 2000;
 const DEAD_MS = 45000;          // 三个心跳周期一声不吭 = 这条连接已经死了
 
 let ws = null;
