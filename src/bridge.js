@@ -41,12 +41,16 @@ const IDLE_EXIT_MS = 10 * 60 * 1000;
 const EXT_SILENCE_MS = 50000;        // 扩展每 15 秒一次心跳，连着三拍没到就先探一下
 const EXT_PROBE_MS = 15000;          // 探了还不回，再等这么久才判死
 const ORPHAN_GRACE_MS = 15000;       // 扩展断开时在途命令的宽限：一个心跳周期，够它重连并补发回执
+// 开了会话窗口的会话断开后，这么久还没带着同一个 sessionId 回来，才算真的结束，
+// 让扩展关掉它的窗口。桥换代、MCP 重启都在这个窗口里回来，不会误关。
+const SESSION_END_GRACE_MS = 60000;
 
 // writeInfo=false 供测试用：不写 bridge.json，否则测试桥的 token 会盖掉
 // 真在跑的那个桥，用户所有 agent 会话当场断连。
 export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo = true, orphanGraceMs = ORPHAN_GRACE_MS,
   silenceMs = EXT_SILENCE_MS, probeMs = EXT_PROBE_MS, tickMs = 20000,
-  idleExitMs = IDLE_EXIT_MS, exitWhenIdle = writeInfo, onIdleExit = () => process.exit(0) } = {}) {
+  idleExitMs = IDLE_EXIT_MS, exitWhenIdle = writeInfo, onIdleExit = () => process.exit(0),
+  sessionEndGraceMs = SESSION_END_GRACE_MS } = {}) {
   ensureHome();
 
   const agents = new Set();      // role=agent 的连接
@@ -105,6 +109,38 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
   // 判定「没人占」，照样撞进别人的页面——而这恰恰是最该拦住的那一条。
   // 几十字节换掉一整条时序假设，划算。
   const liveSessions = () => [...new Set([...agents].map((a) => a.sid).filter(Boolean))];
+
+  // 会话窗口的收尾（hello 带 windows 的会话，见 src/lib/rpc.js）。
+  //
+  // 「结束」只有桥看得出来：会话的特征恰恰是再也没有命令过来。断开先不算数，
+  // 宽限期里同一个 sid 回来就当没发生过；过了宽限还没回来，才告诉扩展关窗。
+  // 扩展那会儿不在线（SW 被回收、Chrome 还没起来）就先记着，它一连上就补发，
+  // 否则那个窗口会一直开着，再没有任何事件来关它。
+  const endTimers = new Map();   // sid → 宽限计时
+  const endedSids = new Set();   // 已经判定结束、还没告诉扩展的会话
+  function sessionGone(sid) {
+    if (!sid || endTimers.has(sid) || liveSessions().includes(sid)) return;
+    endTimers.set(sid, setTimeout(() => {
+      endTimers.delete(sid);
+      if (liveSessions().includes(sid)) return;
+      log(`会话 ${sid} 断开 ${Math.round(sessionEndGraceMs / 1000)}s 没回来，关掉它的窗口`);
+      endedSids.add(sid);
+      flushEnded();
+    }, sessionEndGraceMs));
+  }
+  function sessionBack(sid) {
+    clearTimeout(endTimers.get(sid));
+    endTimers.delete(sid);
+    endedSids.delete(sid);
+  }
+  function flushEnded() {
+    const live = liveExtensions();
+    if (!live.length) return;
+    for (const sid of endedSids) {
+      for (const e of live) send(e, { type: 'event', event: 'session_ended', sid });
+    }
+    endedSids.clear();
+  }
 
   // 命令发给谁。
   //
@@ -183,6 +219,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
         for (const e of liveExtensions()) {
           send(e, { type: 'event', event: 'sessions', live: liveSessions() });
         }
+        if (ws.windows) sessionGone(ws.sid);
       }
       if (extensions.delete(ws)) {
         log(`扩展断开（${extLabel(ws)}）`);
@@ -259,6 +296,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
       send(ws, { type: 'event', event: 'sessions', live: liveSessions() });
       broadcast({ type: 'event', event: 'extension_online' });
       flushWaiting();
+      flushEnded();
       return;
     }
 
@@ -282,6 +320,9 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
       // 会话身份由 agent 自己带来，跨桥重启稳定。老客户端不带，退回连接序号——
       // 行为和以前一样（桥一重启就丢槽），但至少不会串到别人的槽上。
       ws.sid = msg.sessionId || `conn:${ws.connId}`;
+      // 宿主要「每个会话一个窗口」：命令带着这个标记到扩展，断开时由桥判定会话结束
+      ws.windows = msg.windows === true;
+      sessionBack(ws.sid);
       log(`agent 已连接：${ws.label || ws.client}（${ws.client}，会话 ${ws.sid}）`);
       const ext = primary();
       send(ws, {
@@ -378,7 +419,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     // sid 盖章：扩展据此维护每个会话自己的受控 tab 槽（多 agent 并发隔离）。
     // live 是此刻还连着的会话，扩展拿它判断某个标签页「还有没有主」。
     // client / label 是给人看的：页面上的控制标记要写出「Codex CLI」而不是一串 sid。
-    send(target, { ...msg, __k: key, sid: ws.sid, client: ws.client, label: ws.label, live: liveSessions() });   // __k 原样带回，用于精确路由
+    send(target, { ...msg, __k: key, sid: ws.sid, client: ws.client, label: ws.label, live: liveSessions(), ...(ws.windows ? { windows: true } : {}) });   // __k 原样带回，用于精确路由
   }
 
   function routeBack(ws, msg) {
@@ -522,7 +563,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
   }, tickMs);
   idleTimer.unref();
 
-  return { wss, port, token, ready, close: () => { clearInterval(idleTimer); wss.close(); for (const c of wss.clients) c.terminate(); } };
+  return { wss, port, token, ready, close: () => { clearInterval(idleTimer); for (const t of endTimers.values()) clearTimeout(t); wss.close(); for (const c of wss.clients) c.terminate(); } };
 }
 
 // 审计日志里不留敏感明文：输入的文本可能是密码、验证码

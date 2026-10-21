@@ -303,8 +303,11 @@ async function onMessage(msg) {
     await noteSession(msg.sid, msg.label || msg.client, msg.live, msg.label);
     // 缺省 tabId 在这里统一解析成具体 tabId（会话级槽），handler 拿到的永远是实值。
     // ctx 只在本函数内现场传——SW 里两条命令的 await 会交错，绝不能用模块级变量存「当前消息」
-    const ctx = { sid: msg.sid, live: msg.live, adopted: false };
+    // windows：宿主要每个会话一个窗口（见下面「会话窗口」），桥替它盖的章
+    const ctx = { sid: msg.sid, live: msg.live, adopted: false, windows: msg.windows === true };
     const tabId = NO_SLOT_CMDS.has(msg.cmd) ? msg.tabId : await resolveTab(msg.tabId, msg.sid, ctx);
+    // 动手之前把这个会话的窗口提到前面：用户隔着远程桌面看的就是正在动手的那个
+    if (ctx.windows && tabId && !NO_SLOT_CMDS.has(msg.cmd)) await raiseTab(tabId);
     // 显式 tabId 也进户口簿——await 而不是 void：命令完成后的 syncMark 从
     // 户口簿反推归属，登记必须先落盘，否则第一条命令刷不出标记（又一个落盘竞态）
     if (tabId && msg.sid && !NO_SLOT_CMDS.has(msg.cmd)) await registerTab(msg.sid, tabId);
@@ -438,6 +441,7 @@ async function multiLineNote(sid, explicitTab, cmd, resolved) {
 // 用户关掉终端窗口之后，那个页面上的标记会一直挂着，直到下一个会话碰巧
 // 操作同一个标签页。
 function onBridgeEvent(msg) {
+  if (msg.event === 'session_ended') return closeSessionWindow(msg.sid);
   if (msg.event !== 'sessions') return;
   // 先落盘再重算：resyncMarks 里的 ownersOfTab 读的就是 storage 名单
   return noteSession(null, null, msg.live).then(() => resyncMarks());
@@ -502,7 +506,48 @@ async function claimTab(sid, tabId, ctx) {
     .filter((s) => !live.has(s))
     .sort((a, b) => (all[`slotTouch:${a}`] || 0) - (all[`slotTouch:${b}`] || 0))
     .slice(0, slots.length - SLOT_CAP);
-  if (victims.length) await chrome.storage.local.remove(victims.flatMap((s) => [agentTabKey(s), `slotTouch:${s}`, `agentGroup:${s}`, regKey(s)]));
+  if (victims.length) await chrome.storage.local.remove(victims.flatMap((s) => [agentTabKey(s), `slotTouch:${s}`, `agentGroup:${s}`, regKey(s), windowKey(s)]));
+}
+
+// ---------- 会话窗口 ----------
+//
+// 云端 Piko：一台共享的浏览器、好几个 Bot，用户隔着远程桌面看。宿主在 hello 里
+// 要了 windows（见 src/lib/rpc.js）的会话，第一页开在一个只属于它的新窗口里，
+// 后面的页都进这个窗口；每条命令动手前把窗口提到前面，用户看到的永远是正在
+// 动手的那个 Bot。会话真结束了（桥判定，见 src/bridge.js 的 sessionGone），
+// 窗口跟着关。本机用户自己的 Chrome 不要这个标记，照旧只在后台开标签页。
+//
+// 窗口 id 存 local，理由同槽：跨扩展重载不丢，读时靠 windows.update 校验。
+const windowKey = (sid) => `agentWindow:${sid}`;
+
+async function sessionWindowTab(sid, url) {
+  const key = windowKey(sid);
+  const { [key]: windowId } = await chrome.storage.local.get(key);
+  if (windowId) {
+    try {
+      await chrome.windows.update(windowId, { focused: true });
+      return await chrome.tabs.create({ windowId, url, active: true });
+    } catch { /* 窗口已经被关了，下面另开一个 */ }
+  }
+  const win = await chrome.windows.create({ url, focused: true, state: 'maximized' });
+  await chrome.storage.local.set({ [key]: win.id });
+  return win.tabs[0];
+}
+
+async function raiseTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.windows.update(tab.windowId, { focused: true });
+    if (!tab.active) await chrome.tabs.update(tabId, { active: true });
+  } catch { /* 标签页没了，命令自己会报 NO_TAB */ }
+}
+
+async function closeSessionWindow(sid) {
+  if (!sid) return;
+  const key = windowKey(sid);
+  const { [key]: windowId } = await chrome.storage.local.get(key);
+  await chrome.storage.local.remove([key, agentTabKey(sid), `slotTouch:${sid}`, `agentGroup:${sid}`, regKey(sid)]);
+  if (windowId) await chrome.windows.remove(windowId).catch(() => {});
 }
 
 // ---------- 户口簿 ----------
@@ -554,6 +599,8 @@ async function getActiveTabId(sid, ctx) {
       try { await chrome.tabs.get(mine); return mine; } catch { await chrome.storage.local.remove([key, `slotTouch:${sid}`]); } // 槽里的 tab 已关，自愈
     }
   }
+  // 会话窗口模式下不继承别人的页：那一页在别的 Bot 的窗口里，接过来就跑进别人的窗口了
+  if (ctx?.windows) throw err('NO_TAB', '还没有受控标签页——先 tabs(action:"new", url:…) 开一个，它会开在你自己的窗口里');
   const { activeTabId } = await chrome.storage.local.get('activeTabId');
   if (activeTabId) {
     let tab = null;
@@ -2520,7 +2567,9 @@ const HANDLERS = {
     // active:false —— agent 在后台干活，不把用户从他正在看的页面上拽走。
     // 需要抢焦点的场合（截图、让用户看着操作）由调用方显式传 focus:true。
     if (p.action === 'new') {
-      const tab = await chrome.tabs.create({ url: p.url || 'about:blank', active: !!p.focus });
+      const tab = ctx?.windows && sid
+        ? await sessionWindowTab(sid, p.url || 'about:blank')
+        : await chrome.tabs.create({ url: p.url || 'about:blank', active: !!p.focus });
       const label = String(p.label || '').slice(0, 40);
       if (label) await chrome.storage.local.set({ [labelKey(tab.id)]: label });
       await setActiveTabId(tab.id);   // 全局槽照旧更新：它是「最近受控 tab」的继承源
@@ -2529,7 +2578,7 @@ const HANDLERS = {
       // 出生证：tabId 必须被 agent 转述进对话才能活过上下文压缩，
       // 回执里把「该记什么、怎么找回」一次说全
       return {
-        text: `已在后台打开标签页 [${tab.id}]${label ? `「${label}」` : ''}。多线并行（含 subagent）时，`
+        text: `${ctx?.windows ? '已在你自己的窗口里打开' : '已在后台打开'}标签页 [${tab.id}]${label ? `「${label}」` : ''}。多线并行（含 subagent）时，`
           + `后续命令显式带 tabId:${tab.id}`
           + (label ? '' : '；建议开页时带 label:"这页是哪条线"，忘了哪页是哪线时 tabs(action:"list") 能找回')
           + '。',
@@ -2544,7 +2593,8 @@ const HANDLERS = {
       if (label) await chrome.storage.local.set({ [labelKey(id)]: label });
       await setActiveTabId(id);
       await claimTab(sid, id, ctx);
-      if (p.focus) await chrome.tabs.update(id, { active: true });
+      if (ctx?.windows) await raiseTab(id);
+      else if (p.focus) await chrome.tabs.update(id, { active: true });
       return { text: warn + `受控标签页切到 [${id}]${label ? `「${label}」` : ''}` };
     }
     if (p.action === 'close') {
@@ -2712,6 +2762,12 @@ chrome.alarms?.onAlarm.addListener(async () => {
   if (kicked?.connected) return setBadge(true);
   await directConnect();
   setBadge(await connected());
+});
+// 用户（或 Chrome）关掉了一个会话窗口：忘掉它，那个会话下次开页再开新窗口
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  const all = await chrome.storage.local.get(null);
+  const dead = Object.keys(all).filter((k) => k.startsWith('agentWindow:') && all[k] === windowId);
+  if (dead.length) await chrome.storage.local.remove(dead);
 });
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   // 全局槽 + 所有会话级槽一次扫清，别留指向死 tab 的槽
