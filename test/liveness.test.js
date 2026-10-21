@@ -47,3 +47,38 @@ test('静默的连接先收到 ping；回 pong 的活着，不回的才被 termi
   alive.ws.close();
   await sleep(100);
 });
+
+// 空闲退出只看 agent：扩展每 15 秒一次心跳，按它算的话桥永远退不了，
+// 一个早没人用的桥就在后台一直挂着。
+test('没有 agent、没有在途命令就按时退出，扩展连着也一样；有 agent 时不退', async () => {
+  const port = PORT + 1, token = 'd'.repeat(64);
+  let fired = 0, resolveExit;
+  const exited = new Promise((r) => { resolveExit = r; });
+  const b = startBridge({ port, token, writeInfo: false, tickMs: 50, idleExitMs: 300, exitWhenIdle: true,
+    onIdleExit: () => { fired++; resolveExit(); } });
+  await b.ready;
+  try {
+    const agent = new WebSocket(`ws://127.0.0.1:${port}`);
+    await new Promise((r) => agent.on('open', r));
+    const welcomed = new Promise((r) => agent.once('message', r));
+    agent.send(JSON.stringify({ type: 'hello', role: 'agent', token, client: 'test', sessionId: 'idle:1', v: 1 }));
+    await welcomed;
+
+    const e = new WebSocket(`ws://127.0.0.1:${port}`, { origin: EXTENSION_ORIGIN });
+    await new Promise((r) => e.on('open', r));
+    e.on('message', (d) => { if (JSON.parse(d.toString()).type === 'ping') e.send(JSON.stringify({ type: 'pong' })); });
+    e.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'piko', version: VERSION, instanceId: 'idle-ext', v: 1 }));
+
+    // agent 连着：过了好几个空闲窗口也不退
+    const early = await Promise.race([exited.then(() => 'exited'), sleep(900).then(() => 'stayed')]);
+    assert.equal(early, 'stayed', 'agent 还连着时桥不该退出');
+
+    agent.close();
+    await exited;
+    assert.equal(fired, 1);
+    assert.equal(e.readyState, WebSocket.OPEN, '扩展连着不该拦住空闲退出');
+    e.close();
+  } finally {
+    b.close();
+  }
+});

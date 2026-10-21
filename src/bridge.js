@@ -34,7 +34,10 @@ export function effectOf(data) {
 import { PROTOCOL, compat, compatNote } from '../extension/compat.js';
 const HELLO_TIMEOUT = 5000;
 const CMD_TIMEOUT = 30000;
-const IDLE_EXIT_MS = 30 * 60 * 1000; // 半小时没人用就自己退，别留僵尸进程
+// 没有 agent、也没有在途/排队的命令，持续这么久就自己退，别留僵尸进程。
+// 扩展连着不算「有人用」：它的心跳每 15 秒一次，按它算的话桥永远退不了。
+// 下次有 agent 要用时 MCP server 会再拉起一个，扩展几秒内就重连上。
+const IDLE_EXIT_MS = 10 * 60 * 1000;
 const EXT_SILENCE_MS = 50000;        // 扩展每 15 秒一次心跳，连着三拍没到就先探一下
 const EXT_PROBE_MS = 15000;          // 探了还不回，再等这么久才判死
 const ORPHAN_GRACE_MS = 15000;       // 扩展断开时在途命令的宽限：一个心跳周期，够它重连并补发回执
@@ -42,7 +45,8 @@ const ORPHAN_GRACE_MS = 15000;       // 扩展断开时在途命令的宽限：�
 // writeInfo=false 供测试用：不写 bridge.json，否则测试桥的 token 会盖掉
 // 真在跑的那个桥，用户所有 agent 会话当场断连。
 export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo = true, orphanGraceMs = ORPHAN_GRACE_MS,
-  silenceMs = EXT_SILENCE_MS, probeMs = EXT_PROBE_MS, tickMs = 20000 } = {}) {
+  silenceMs = EXT_SILENCE_MS, probeMs = EXT_PROBE_MS, tickMs = 20000,
+  idleExitMs = IDLE_EXIT_MS, exitWhenIdle = writeInfo, onIdleExit = () => process.exit(0) } = {}) {
   ensureHome();
 
   const agents = new Set();      // role=agent 的连接
@@ -85,7 +89,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     + `（最多 ${WAIT_MAX / 1000}s），它还没回来。让用户点一下浏览器工具栏的 Claymore Piko 图标 → 「重连」`
     + '（插件没消失，只是这条连接断了）；Chrome 没开就先开；改过扩展代码才需要去 chrome://extensions 重载。';
 
-  let lastActivity = Date.now();
+  let lastAgentAt = Date.now();   // 最近一次有 agent 连着或说话的时刻，空闲退出只看它
 
   // 在线会话集合。扩展靠它判断「最近那个受控标签页还有主吗」——有主就不让
   // 新会话继承，没主才放行。这是「两个 agent 撞进同一个页面」唯一能拦住的地方，
@@ -144,8 +148,8 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
       } catch {
         return send(ws, { type: 'res', ok: false, error: { code: 'INTERNAL', message: '非法 JSON' } });
       }
-      lastActivity = Date.now();
-      ws.lastRx = lastActivity;
+      ws.lastRx = Date.now();
+      if (agents.has(ws)) lastAgentAt = ws.lastRx;
 
       if (!ws.helloed) {
         clearTimeout(helloTimer);
@@ -157,6 +161,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     ws.on('close', () => {
       clearTimeout(helloTimer);
       if (agents.delete(ws)) {
+        lastAgentAt = Date.now();
         // 只把它从在线集合里摘掉，**不删它的受控标签页槽**。
         // 这条连接断开有两种可能：会话真的结束了，或者只是桥在换代/抖了一下
         // 而 agent 马上会带着同一个 sessionId 回来。删槽会把后者也一起毁掉，
@@ -254,6 +259,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
         return ws.close(4001, 'bad token');
       }
       agents.add(ws);
+      lastAgentAt = Date.now();
       ws.helloed = true;
       ws.client = msg.client || 'unknown';
       // label 是宿主的显示名（「Codex CLI」），由 MCP server 从握手里认出来；
@@ -477,9 +483,10 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
         e.terminate();
       }
     }
-    if (writeInfo && agents.size === 0 && !liveExtensions().length && Date.now() - lastActivity > IDLE_EXIT_MS) {
-      log('空闲超时，桥自行退出');
-      process.exit(0);
+    if (exitWhenIdle && agents.size === 0 && pending.size === 0 && !waiting.length && Date.now() - lastAgentAt > idleExitMs) {
+      log(`${Math.round(idleExitMs / 60000)} 分钟没有 agent，桥自行退出`);
+      clearInterval(idleTimer);
+      onIdleExit();
     }
   }, tickMs);
   idleTimer.unref();
