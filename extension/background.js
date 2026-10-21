@@ -192,7 +192,17 @@ function directSend(msg) {
 // 谁都没在干活，而扩展看起来一切正常。
 //
 // 交接改成显式的：offscreen 一旦真的连上会发 'up'，SW 收到就把自己这条关掉。
-async function directConnect() {
+//
+// 单飞：directWs 要等握手完才赋值，这之前它还是 null。回执的 directSend、
+// 启动时的兜底、alarm 自愈同时撞进来，每个都过了下面那道检查、各开一条 socket，
+// 桥按同一个 instanceId 一条顶一条——冷启动一秒里三条「扩展已连接」，
+// 命令落在被顶掉的那条上。
+let directing = null;
+function directConnect() {
+  if (!directing) directing = openDirect().finally(() => { directing = null; });
+  return directing;
+}
+async function openDirect() {
   if (directWs && directWs.readyState <= 1) return;
   // 两条腿必须报同一个 instanceId：桥认的是实例不是连接，报岔了
   // 就会被当成两个 Chrome 并存，谁也不替换谁。
@@ -221,7 +231,8 @@ async function directConnect() {
             if (x.type === 'ping') { if (sock.readyState === 1) sock.send(JSON.stringify({ type: 'pong' })); return; }
             onMessage(x);
           };
-          sock.onclose = () => { directWs = null; stopDirectPing(); setBadge(false); };
+          // 只收拾自己：一条早已被换下的 socket 关掉时，不能把正在用的那条也当没了
+          sock.onclose = () => { if (directWs !== sock) return; directWs = null; stopDirectPing(); setBadge(false); };
           sock.onerror = () => {};
           resolve(sock);
         };
@@ -2922,8 +2933,15 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
 
 // SW 每次醒来（安装、浏览器启动、alarm 唤醒、offscreen 递消息）都会跑到这里。
 // 给 offscreen 一点时间自己连上，它没连上就自己顶。
+//
+// 「没连上」要问 kick，不能只看 status：冷启动时桥常常恰好在这 2 秒里起来，
+// offscreen 正握着手、status 还是「没连上」，这边一开兜底腿，两条腿就按同一个
+// instanceId 互相顶替，桥补发的排队命令正好落在被顶掉的那条上。kick 会等
+// offscreen 在途的那一次探完再回话（同上面 alarm 的处理）。
 (async () => {
   await ensureOffscreen();
   await sleep(2000);
-  if (!(await connected())) await directConnect();
+  if (await connected()) return;
+  const kicked = await chrome.runtime.sendMessage({ __hcBridge: 'kick' }).catch(() => null);
+  if (!kicked?.connected) await directConnect();
 })();
