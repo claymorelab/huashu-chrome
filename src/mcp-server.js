@@ -588,6 +588,11 @@ export async function startMcpServer({ client = 'unknown' } = {}) {
         return { content: [{ type: 'text', text }] };
       }
 
+      // 只给 tabId 的 query 在页面里会炸成 INTERNAL，看不出是参数的问题——在这一侧先拦下。
+      if (name === 'query' && !args.selector && !args.contains) {
+        throw Object.assign(new Error('query 需要 selector 或 contains（至少一个）。'), { code: 'BAD_PARAMS' });
+      }
+
       if (!bridge.ws) await bridge.connect();
 
       // 翻页在这一侧循环：审计里 fetch→fetch 相邻 386 次，agent 在一页一个回合地

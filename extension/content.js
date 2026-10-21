@@ -1966,7 +1966,7 @@
 
   function doQuery(p) {
     if (p.contains) return queryByText(p);
-    if (!p.selector) throw fail('INTERNAL', 'query 需要 selector 或 contains');
+    if (!p.selector) throw fail('BAD_PARAMS', 'query 需要 selector 或 contains（至少一个）。');
     const nodes = [...document.querySelectorAll(p.selector)].slice(0, p.limit || 100);
     if (p.html) {
       return { data: { untrusted: true, text: nodes.map((el, i) => `--- [${i}] ---\n` + el.outerHTML.slice(0, p.html === true ? 1200 : p.html)).join('\n\n') } };

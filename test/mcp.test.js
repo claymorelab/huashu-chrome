@@ -72,6 +72,11 @@ test('agent 能通过 stdio 挂上 MCP server 并拿到工具表', async () => {
   assert.match(r.content[0].text, /多维表格/);
   assert.match(r.content[0].text, /经验仅供参考/);
 
+  // 只给 tabId 的 query 是参数错，不是 INTERNAL——而且在连桥之前就该拦下
+  const q = await client.callTool({ name: 'query', arguments: { tabId: 1 } });
+  assert.equal(q.isError, true);
+  assert.match(q.content[0].text, /^\[BAD_PARAMS\] query 需要 selector 或 contains/);
+
   } finally {
     await client.close();
   }
