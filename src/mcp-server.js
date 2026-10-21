@@ -538,8 +538,16 @@ function wrapUntrusted(body, meta = '') {
   );
 }
 
+// 宿主可以用 HUASHU_CHROME_SESSION_ID 指定稳定的会话标识。一个宿主进程
+// 同时跑多个会话时（例如 Piko 的多个会话共用一个父进程），ppid 区分不开，
+// 几个会话会落进同一个标签页槽里互相抢。
+export function sessionIdFromEnv(env = process.env) {
+  const value = String(env.HUASHU_CHROME_SESSION_ID ?? '').trim();
+  return value || undefined;
+}
+
 export async function startMcpServer({ client = 'unknown' } = {}) {
-  const bridge = new BridgeClient({ client });
+  const bridge = new BridgeClient({ client, sessionId: sessionIdFromEnv() });
   const server = new Server(
     { name: 'huashu-chrome', version: VERSION },
     { capabilities: { tools: {} }, instructions: STRATEGY }

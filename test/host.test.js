@@ -64,3 +64,13 @@ test('BridgeClient 在连桥之前可以改口，连上之后不行', () => {
   assert.equal(c.identify('gemini'), false);
   assert.equal(c.client, 'codex');
 });
+
+test('HUASHU_CHROME_SESSION_ID 固定会话标识，空值回到默认推断', async () => {
+  const { sessionIdFromEnv } = await import('../src/mcp-server.js');
+  assert.equal(sessionIdFromEnv({ HUASHU_CHROME_SESSION_ID: ' piko:abc ' }), 'piko:abc');
+  assert.equal(sessionIdFromEnv({ HUASHU_CHROME_SESSION_ID: '  ' }), undefined);
+  assert.equal(sessionIdFromEnv({}), undefined);
+  const c = new BridgeClient({ client: 'codex', sessionId: sessionIdFromEnv({ HUASHU_CHROME_SESSION_ID: 'piko:abc' }) });
+  c.identify('claude-code', 'Claude Code');
+  assert.equal(c.sessionId, 'piko:abc');
+});
