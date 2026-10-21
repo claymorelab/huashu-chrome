@@ -35,7 +35,7 @@ test('宿主自定义的 sessionId 没有冒号结构也不能崩', () => {
   assert.ok(id.code);
   assert.ok(id.emoji);
   // 不拿一段来路不明的会话标识去冒充 agent 名——真名由桥另外传 client 给出
-  assert.equal(id.label, 'AI agent');
+  assert.equal(id.label, 'Piko');
   assert.equal(identityOf('a-custom-session-identifier', 'cursor').label, 'Cursor');
 });
 
@@ -43,8 +43,8 @@ test('client 名做机械美化，不维护第二张 agent 表', () => {
   assert.equal(prettyClient('claude-code'), 'Claude Code');
   assert.equal(prettyClient('codex'), 'Codex');
   assert.equal(prettyClient('kimi_code'), 'Kimi Code');
-  assert.equal(prettyClient(''), 'AI agent');
-  assert.equal(prettyClient('unknown'), 'AI agent');
+  assert.equal(prettyClient(''), 'Piko');
+  assert.equal(prettyClient('unknown'), 'Piko');
 });
 
 test('agents.json 里的显示名经过美化后原样不动', () => {
@@ -94,4 +94,15 @@ test('每个身份都带一个 Chrome 认识的标签组颜色', () => {
     assert.ok(CHROME_GROUP_COLORS.has(p.group), `${p.emoji} 的组色 "${p.group}" 不是 Chrome 认识的名字`);
   }
   assert.ok(identityOf('claude-code:p1').group, 'identityOf 要把组色带出来，syncGroup 靠它上色');
+});
+
+test('标签组组名用会话显示名，没有就叫 Piko，过长截断', async () => {
+  const { groupTitleFor, GROUP_TITLE_MAX } = await import('../extension/identity.js');
+  assert.equal(groupTitleFor(undefined), 'Piko');
+  assert.equal(groupTitleFor('  '), 'Piko');
+  assert.equal(groupTitleFor('小红书运营'), '小红书运营');
+  const long = groupTitleFor('一个名字特别特别特别长的运营机器人');
+  assert.equal(Array.from(long).length, GROUP_TITLE_MAX);
+  assert.ok(long.endsWith('…'));
+  assert.equal(Array.from(groupTitleFor('🤖'.repeat(20))).length, GROUP_TITLE_MAX, 'emoji 不能被截成半个');
 });

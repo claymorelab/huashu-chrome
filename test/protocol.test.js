@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 import { startBridge } from '../src/bridge.js';
 import { VERSION, EXT_VERSION } from '../src/lib/version.js';
+import { EXTENSION_ID, EXTENSION_ORIGIN } from '../src/lib/paths.js';
 
 const PORT = 8987;
 const TOKEN = 'a'.repeat(64);
@@ -47,12 +48,22 @@ test('网页 Origin 被桥拒绝 —— 这是最要紧的一条边界', async (
   await assert.rejects(firstMessage(ws), (e) => /403/.test(e.message));
 });
 
-test('伪造成 chrome-extension 的网页 Origin：浏览器不可能发出，但仍要能进握手', async () => {
-  const ws = open({ origin: 'chrome-extension://fakeid' });
-  ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'fakeid', v: 1 })));
+test('只放 Claymore Piko 扩展进来：别的扩展（包括上游 huashu-chrome）一律 403', async () => {
+  for (const origin of ['chrome-extension://foiljmaplphdfimfcnfdpekhdnfbgfbf', 'chrome-extension://fakeid', `${EXTENSION_ORIGIN}x`]) {
+    const ws = open({ origin });
+    await assert.rejects(firstMessage(ws), (e) => /403/.test(e.message), origin);
+  }
+  const ws = open({ origin: EXTENSION_ORIGIN });
+  ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', role: 'extension', extId: EXTENSION_ID, v: 1 })));
   const m = await firstMessage(ws);
   assert.equal(m.type, 'welcome');
   ws.close();
+});
+
+test('桥认的扩展 ID 就是 manifest 公钥算出来的那个', async () => {
+  const { extensionId } = await import('../src/install.js');
+  assert.equal(EXTENSION_ID, 'mdgjhgdcdiehjoinklgbgoabeaokeaim');
+  assert.equal(extensionId(), EXTENSION_ID);
 });
 
 test('agent 用错 token 连不上', async () => {
@@ -62,7 +73,7 @@ test('agent 用错 token 连不上', async () => {
 });
 
 test('扩展冒充 agent（有 Origin 却报 role:agent）被拒', async () => {
-  const ws = open({ origin: 'chrome-extension://x' });
+  const ws = open({ origin: EXTENSION_ORIGIN });
   ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', role: 'agent', token: TOKEN, v: 1 })));
   await assert.rejects(firstMessage(ws), (e) => /closed 4003/.test(e.message));
 });
@@ -91,7 +102,7 @@ test('扩展离线时命令先排队，扩展一连上就送达（不再假判�
 
   // 命令发出去时扩展还不在。200ms 后它才连上——够久，足以证明桥真的等了
   await new Promise((r) => setTimeout(r, 200));
-  const ext = open({ origin: 'chrome-extension://late' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'late', v: 1 })));
   ext.on('message', (d) => {
     const m = JSON.parse(d.toString());
@@ -131,7 +142,7 @@ test('排队期间 agent 自己走了，不能在它关闭的连接上回包', a
   agent.close();
 
   // 扩展随后连上：队列里那条属于已关闭 agent 的命令必须被丢掉，不能派给扩展
-  const ext = open({ origin: 'chrome-extension://after' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   let got = 0;
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'after', v: 1 })));
   ext.on('message', (d) => { if (JSON.parse(d.toString()).type === 'cmd') got++; });
@@ -142,7 +153,7 @@ test('排队期间 agent 自己走了，不能在它关闭的连接上回包', a
 });
 
 test('端到端：agent 的 cmd 走到扩展，扩展的 res 走回 agent', async () => {
-  const ext = open({ origin: 'chrome-extension://real' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'real', v: 1 })));
   await firstMessage(ext);
 
@@ -171,7 +182,7 @@ test('端到端：agent 的 cmd 走到扩展，扩展的 res 走回 agent', asyn
 });
 
 test('扩展在命令执行途中掉线，在途命令立刻失败', async () => {
-  const ext = open({ origin: 'chrome-extension://drop' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'drop', v: 1 })));
   await firstMessage(ext);
 
@@ -188,7 +199,7 @@ test('扩展在命令执行途中掉线，在途命令立刻失败', async () =>
 
 test('两个 agent 同时发同一个 id，响应不会串到对方', async () => {
   // 每个 agent 进程的消息 id 都从 c1 开始数，这是必然会撞的
-  const ext = open({ origin: 'chrome-extension://dual' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'dual', v: 1 })));
   await firstMessage(ext);
 
@@ -227,7 +238,7 @@ const helloAgent = async (name, sessionId) => {
 };
 
 test('hello 里的 label 随每条命令盖给扩展；不带就不盖', async () => {
-  const ext = open({ origin: 'chrome-extension://label' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'label', v: 1 })));
   await firstMessage(ext);
 
@@ -258,7 +269,7 @@ test('hello 里的 label 随每条命令盖给扩展；不带就不盖', async (
 });
 
 test('桥给每条命令盖章 sid：每会话稳定、会话间互异，且不回泄给 agent', async () => {
-  const ext = open({ origin: 'chrome-extension://stamp' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'stamp', v: 1 })));
   await firstMessage(ext);
 
@@ -314,7 +325,7 @@ test('桥换了一个进程，同一个 sessionId 盖出来的章不变', async 
       ext.close(); a.close();
       return sid;
     };
-    assert.equal(await stamp(URL, 'chrome-extension://s1'), await stamp(`ws://127.0.0.1:${PORT + 2}`, 'chrome-extension://s2'));
+    assert.equal(await stamp(URL, EXTENSION_ORIGIN), await stamp(`ws://127.0.0.1:${PORT + 2}`, EXTENSION_ORIGIN));
   } finally {
     other.close();
   }
@@ -330,7 +341,7 @@ test('桥换了一个进程，同一个 sessionId 盖出来的章不变', async 
 // 结束了，或者只是桥换代而 agent 马上会带着同一个 sessionId 回来。
 // 删槽会把后者一起毁掉，那正是「桥一重启就跟丢标签页」的老毛病。
 test('每条命令都带着当前的在线会话名单', async () => {
-  const ext = open({ origin: 'chrome-extension://roster' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'roster', v: 1 })));
   await firstMessage(ext);
 
@@ -367,7 +378,7 @@ test('每条命令都带着当前的在线会话名单', async () => {
 });
 
 test('agent 断开时不发删槽指令 —— 它可能只是要重连', async () => {
-  const ext = open({ origin: 'chrome-extension://gone' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'gone', v: 1 })));
   await firstMessage(ext);
 
@@ -388,7 +399,7 @@ test('agent 断开时不发删槽指令 —— 它可能只是要重连', async 
 test('扩展的 ping 有 pong 回执', async () => {
   // 单向发不算数：Chrome 是靠 WebSocket 的收发活动去续 service worker 的
   // 空闲计时的。以前这条 ping 掉进路由的缝里被默默丢掉，桥从不回应。
-  const ext = open({ origin: 'chrome-extension://ping' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'ping', v: 1 })));
   await firstMessage(ext);
 
@@ -405,7 +416,7 @@ test('扩展的 ping 有 pong 回执', async () => {
 });
 
 test('扩展发的事件广播给所有 agent（tab_closed 回归）', async () => {
-  const ext = open({ origin: 'chrome-extension://bc' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'bc', v: 1 })));
   await firstMessage(ext);
 
@@ -434,7 +445,7 @@ test('扩展发的事件广播给所有 agent（tab_closed 回归）', async () 
 // 老客户端不带 sessionId。它拿不到「跨桥重启稳定」这个好处（行为和以前一样），
 // 但绝不能因此串到别人的槽上——退回来的身份必须仍然是每连接互异的。
 test('不带 sessionId 的老客户端仍然拿到互异的身份', async () => {
-  const ext = open({ origin: 'chrome-extension://legacy' });
+  const ext = open({ origin: EXTENSION_ORIGIN });
   ext.on('open', () => ext.send(JSON.stringify({ type: 'hello', role: 'extension', extId: 'legacy', v: 1 })));
   await firstMessage(ext);
 

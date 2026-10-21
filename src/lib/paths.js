@@ -6,11 +6,14 @@ import crypto from 'node:crypto';
 
 // HUASHU_CHROME_HOME 让宿主指定配置目录。Piko 给 MCP server 的 HOME 是每个
 // 会话隔离的，按 HOME 推出来的目录各不相同，几个会话就会各起一个桥、互相抢
-// 8899 端口。宿主给同一个账号级目录，大家就共用一个桥。只接受绝对路径。
+// 端口。宿主给同一个账号级目录，大家就共用一个桥。只接受绝对路径。
+//
+// 默认目录、端口和扩展 ID 都和上游 huashu-chrome 分开：同一台机器上两个都装着时，
+// 各用各的桥，谁也不会把对方的 bridge.json、token 或扩展连接抢走。
 export function homeDir(env = process.env) {
   const configured = String(env.HUASHU_CHROME_HOME ?? '').trim();
   if (configured && path.isAbsolute(configured)) return configured;
-  return path.join(os.homedir(), '.huashu-chrome');
+  return path.join(os.homedir(), '.claymore-piko-browser');
 }
 
 export const HOME = homeDir();
@@ -20,7 +23,13 @@ export const AUDIT_FILE = path.join(HOME, 'audit.jsonl');
 export const ALLOWLIST_FILE = path.join(HOME, 'allowlist.json');
 export const LOG_FILE = path.join(HOME, 'bridge.log');
 
-export const DEFAULT_PORT = 8899;
+// 上游用 8899–8903。扩展按 8898 往下探（extension/offscreen.js），两套互不相交。
+export const DEFAULT_PORT = 8898;
+
+// Claymore Piko 扩展的 ID，由 extension/manifest.json 的 key 算出（test/protocol.test.js 守着）。
+// 桥只放这一个扩展进来：上游 huashu-chrome 或任何别的扩展都连不上我们的桥。
+export const EXTENSION_ID = 'mdgjhgdcdiehjoinklgbgoabeaokeaim';
+export const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
 
 export function ensureHome() {
   fs.mkdirSync(HOME, { recursive: true, mode: 0o700 });

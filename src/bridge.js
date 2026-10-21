@@ -5,10 +5,11 @@
 //   它不解析页面、不认识 ref、不知道 snapshot 是什么——那些全在扩展侧。
 //
 // 安全边界就在 verifyClient：浏览器发起 WS 时强制带 Origin 且不可伪造，
-// 网页的 Origin 是自己的域名，扩展的是 chrome-extension://<id>。只放后者进来。
+// 网页的 Origin 是自己的域名，扩展的是 chrome-extension://<id>。只放我们自己那个扩展进来——
+// 别的扩展（包括上游 huashu-chrome）同样带 chrome-extension:// 却不该能驱动这个桥。
 import { WebSocketServer } from 'ws';
 import fs from 'node:fs';
-import { DEFAULT_PORT, writeBridgeInfo, newToken, tokenEquals, audit, ensureHome, ALLOWLIST_FILE } from './lib/paths.js';
+import { DEFAULT_PORT, EXTENSION_ORIGIN, writeBridgeInfo, newToken, tokenEquals, audit, ensureHome, ALLOWLIST_FILE } from './lib/paths.js';
 import { VERSION } from './lib/version.js';
 // 纯字符串判定、不碰 chrome API，所以桥这边直接复用，不再抄一份
 import { scrubProse } from '../extension/redact.js';
@@ -33,7 +34,10 @@ export function effectOf(data) {
 import { PROTOCOL, compat, compatNote } from '../extension/compat.js';
 const HELLO_TIMEOUT = 5000;
 const CMD_TIMEOUT = 30000;
-const IDLE_EXIT_MS = 30 * 60 * 1000; // 半小时没人用就自己退，别留僵尸进程
+// 没有 agent、也没有在途/排队的命令，持续这么久就自己退，别留僵尸进程。
+// 扩展连着不算「有人用」：它的心跳每 15 秒一次，按它算的话桥永远退不了。
+// 下次有 agent 要用时 MCP server 会再拉起一个，扩展几秒内就重连上。
+const IDLE_EXIT_MS = 10 * 60 * 1000;
 const EXT_SILENCE_MS = 50000;        // 扩展每 15 秒一次心跳，连着三拍没到就先探一下
 const EXT_PROBE_MS = 15000;          // 探了还不回，再等这么久才判死
 const ORPHAN_GRACE_MS = 15000;       // 扩展断开时在途命令的宽限：一个心跳周期，够它重连并补发回执
@@ -41,7 +45,8 @@ const ORPHAN_GRACE_MS = 15000;       // 扩展断开时在途命令的宽限：�
 // writeInfo=false 供测试用：不写 bridge.json，否则测试桥的 token 会盖掉
 // 真在跑的那个桥，用户所有 agent 会话当场断连。
 export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo = true, orphanGraceMs = ORPHAN_GRACE_MS,
-  silenceMs = EXT_SILENCE_MS, probeMs = EXT_PROBE_MS, tickMs = 20000 } = {}) {
+  silenceMs = EXT_SILENCE_MS, probeMs = EXT_PROBE_MS, tickMs = 20000,
+  idleExitMs = IDLE_EXIT_MS, exitWhenIdle = writeInfo, onIdleExit = () => process.exit(0) } = {}) {
   ensureHome();
 
   const agents = new Set();      // role=agent 的连接
@@ -81,10 +86,10 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
   // 话术和 doctor、mcp-server 的 hint 保持一致：首选动作是扩展弹窗里的「重连」，
   // 不是去 chrome://extensions——插件从来没消失过，去那儿只会把人引向「重装」。
   const NO_EXT_MSG = '扩展没连上桥。桥已经替你等过一轮'
-    + `（最多 ${WAIT_MAX / 1000}s），它还没回来。让用户点一下浏览器工具栏的 huashu-chrome 图标 → 「重连」`
+    + `（最多 ${WAIT_MAX / 1000}s），它还没回来。让用户点一下浏览器工具栏的 Claymore Piko 图标 → 「重连」`
     + '（插件没消失，只是这条连接断了）；Chrome 没开就先开；改过扩展代码才需要去 chrome://extensions 重载。';
 
-  let lastActivity = Date.now();
+  let lastAgentAt = Date.now();   // 最近一次有 agent 连着或说话的时刻，空闲退出只看它
 
   // 在线会话集合。扩展靠它判断「最近那个受控标签页还有主吗」——有主就不让
   // 新会话继承，没主才放行。这是「两个 agent 撞进同一个页面」唯一能拦住的地方，
@@ -119,7 +124,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     verifyClient: (info, done) => {
       const origin = info.req.headers.origin;
       if (origin === undefined) return done(true);              // Node 侧，进握手后验 token
-      if (origin.startsWith('chrome-extension://')) return done(true);
+      if (origin === EXTENSION_ORIGIN) return done(true);
       audit({ ev: 'reject_origin', origin });                   // 网页想连桥——这就是攻击面，堵在这里
       done(false, 403, 'forbidden origin');
     },
@@ -127,7 +132,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
 
   wss.on('connection', (ws, req) => {
     const origin = req.headers.origin;
-    ws.isExtension = typeof origin === 'string' && origin.startsWith('chrome-extension://');
+    ws.isExtension = origin === EXTENSION_ORIGIN;
     ws.helloed = false;
     ws.connId = ++connSeq;
     ws.lastRx = Date.now();
@@ -143,8 +148,8 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
       } catch {
         return send(ws, { type: 'res', ok: false, error: { code: 'INTERNAL', message: '非法 JSON' } });
       }
-      lastActivity = Date.now();
-      ws.lastRx = lastActivity;
+      ws.lastRx = Date.now();
+      if (agents.has(ws)) lastAgentAt = ws.lastRx;
 
       if (!ws.helloed) {
         clearTimeout(helloTimer);
@@ -156,6 +161,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     ws.on('close', () => {
       clearTimeout(helloTimer);
       if (agents.delete(ws)) {
+        lastAgentAt = Date.now();
         // 只把它从在线集合里摘掉，**不删它的受控标签页槽**。
         // 这条连接断开有两种可能：会话真的结束了，或者只是桥在换代/抖了一下
         // 而 agent 马上会带着同一个 sessionId 回来。删槽会把后者也一起毁掉，
@@ -241,6 +247,10 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
           + `命令路由到：${extLabel(primary())}`);
       }
       send(ws, { type: 'welcome', bridge: VERSION, v: PROTOCOL });
+      // 紧跟 welcome 推一次在线名单。会话下线时的那条 sessions 推送只发给当时连着的
+      // 扩展；扩展那会儿断着（被回收、桥换代）就收不到，storage 里留着旧名单，
+      // 早已走掉的会话的标签页就一直显示「被占着」，标记和标签组也摘不掉。
+      send(ws, { type: 'event', event: 'sessions', live: liveSessions() });
       broadcast({ type: 'event', event: 'extension_online' });
       flushWaiting();
       return;
@@ -253,6 +263,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
         return ws.close(4001, 'bad token');
       }
       agents.add(ws);
+      lastAgentAt = Date.now();
       ws.helloed = true;
       ws.client = msg.client || 'unknown';
       // label 是宿主的显示名（「Codex CLI」），由 MCP server 从握手里认出来；
@@ -476,9 +487,10 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
         e.terminate();
       }
     }
-    if (writeInfo && agents.size === 0 && !liveExtensions().length && Date.now() - lastActivity > IDLE_EXIT_MS) {
-      log('空闲超时，桥自行退出');
-      process.exit(0);
+    if (exitWhenIdle && agents.size === 0 && pending.size === 0 && !waiting.length && Date.now() - lastAgentAt > idleExitMs) {
+      log(`${Math.round(idleExitMs / 60000)} 分钟没有 agent，桥自行退出`);
+      clearInterval(idleTimer);
+      onIdleExit();
     }
   }, tickMs);
   idleTimer.unref();

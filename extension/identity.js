@@ -72,7 +72,7 @@ function hash32(s) {
 // claude-code → Claude Code；已经带大写的是显示名（iFlow、OpenClaw），原样通过
 export function prettyClient(client) {
   const c = String(client || '').trim();
-  if (!c || c === 'unknown') return 'AI agent';
+  if (!c || c === 'unknown') return 'Piko';
   if (/[A-Z]/.test(c)) return c;
   return c.split(/[-_\s]+/).filter(Boolean)
     .map((w) => w[0].toUpperCase() + w.slice(1))
@@ -89,4 +89,13 @@ export function identityOf(sid, client) {
   const code = i >= 0 && i < s.length - 1 ? s.slice(i + 1) : s.slice(-6);
   const p = MARK_PALETTE[hash32(s) % MARK_PALETTE.length];
   return { sid: s, emoji: p.emoji, color: p.color, group: p.group, label: prettyClient(slug), code };
+}
+
+// 标签组的组名：会话的显示名（Piko 里是 Bot 的名字），没有就叫「Piko」。
+// 标签栏里组名太长会把标签页挤没，按字符（不是 UTF-16 码元）超过 12 个就截断。
+export const GROUP_TITLE_MAX = 12;
+export function groupTitleFor(label) {
+  const chars = Array.from(String(label || '').trim());
+  if (!chars.length) return 'Piko';
+  return chars.length > GROUP_TITLE_MAX ? chars.slice(0, GROUP_TITLE_MAX - 1).join('') + '…' : chars.join('');
 }

@@ -31,9 +31,11 @@ function makeSessionId(client) {
 export class BridgeClient {
   // sessionId 可以由调用方指定：宿主如果自己有一个稳定的会话标识，那个比
   // 从 ppid 猜出来的更准。不指定就用默认那套。
+  // label 同理：宿主指定了（HUASHU_CHROME_LABEL）就钉住，identify() 只改 client。
   constructor({ client = 'unknown', sessionId, label } = {}) {
     this.client = client;
     this.label = label;
+    this.pinnedLabel = !!label;
     this.pinnedSid = !!sessionId;
     this.sessionId = sessionId || makeSessionId(client);
     this.ws = null;
@@ -49,7 +51,7 @@ export class BridgeClient {
   identify(client, label) {
     if (this.ws) return false;
     this.client = client;
-    this.label = label;
+    if (!this.pinnedLabel) this.label = label;
     if (!this.pinnedSid) this.sessionId = makeSessionId(client);
     return true;
   }
@@ -79,7 +81,7 @@ export class BridgeClient {
       if (!spawned) spawned = tryStartBridge();
       await sleep(250);
     }
-    throw new Error('连不上 huashu-chrome 桥。跑 `huashu-chrome doctor` 看看哪儿卡住了');
+    throw new Error('连不上 Claymore Piko 的浏览器桥。跑 `npx claymore-piko-browser doctor` 看看哪儿卡住了');
   }
 
   #open(info) {
