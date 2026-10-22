@@ -58,11 +58,8 @@
   .light .name { font-weight: 500; }
   .light .sub { color: var(--mute); font-size: 12px; }
   .cmd { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-  code { font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--soft);
-         padding: 4px 7px; border-radius: 6px; word-break: break-all; flex: 1; }
   button.btn { font: inherit; font-size: 12px; border: 0; border-radius: 7px; padding: 5px 10px; cursor: pointer;
                background: var(--accent); color: #fff; flex: none; }
-  button.btn.ghost { background: var(--soft); color: var(--ink); }
   button.btn:disabled { opacity: .45; cursor: default; }
   .sw-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
   .sw-row .txt { flex: 1; }
@@ -73,7 +70,6 @@
                    background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
   .toggle:checked { background: var(--ok); }
   .toggle:checked::after { transform: translateX(14px); }
-  footer { color: var(--mute); font-size: 11.5px; padding: 0 16px 18px; }
 </style>
 
 <header>
@@ -89,7 +85,7 @@
   </section>
 
   <section>
-    <h2>所有在线的 agent</h2>
+    <h2>所有在线的 Bot</h2>
     <div class="sess" id="sess"></div>
   </section>
 
@@ -97,7 +93,7 @@
     <h2>连接</h2>
     <div id="lights"></div>
     <div class="cmd" id="reconnRow" hidden><button class="btn" id="reconn">重连</button>
-      <span class="sub" style="color:var(--mute);font-size:12px">插件没消失，断的只是到终端的连接</span></div>
+      <span class="sub" style="color:var(--mute);font-size:12px">插件没消失，断的只是到 Piko 的连接</span></div>
   </section>
 
   <section>
@@ -112,8 +108,6 @@
     </label>
   </section>
 </main>
-
-<footer>连不上时在终端跑 <code style="padding:1px 5px">npx claymore-piko-browser doctor</code>，它会告诉你卡在哪一步。</footer>
 
 <script type="module" src="panel.js"></script>
 </html>

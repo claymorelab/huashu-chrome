@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Claymore Piko 浏览器扩展的 CLI（命令名 piko-browser，基于 huashu-chrome）
-//   mcp      给 agent 用的 MCP server（stdio）。agent 配置里填的就是这条。
+// Claymore Piko 浏览器扩展的 CLI（命令名 piko-browser，基于 huashu-chrome）。
+// 它是 Piko 的内部工具：桌面 App 和云端 Home 自带这份代码，直接拿 node 跑，不走 npm。
+//   mcp      给 agent 用的 MCP server（stdio）。Piko 给每个会话起的就是这条。
 //   bridge   桥 daemon。正常不用手动跑，mcp 会自己拉起。
 //   doctor   诊断：这类产品的头号支持成本就是「连不上」，把排查做成一条命令。
 //   extension  打印扩展路径和加载步骤
@@ -92,21 +93,13 @@ switch (cmd) {
     }
   }
 
-  case 'install': {
-    const { install } = await import('./install.js');
-    await install({ yes: !has('--dry-run'), only: flag('--only', null) });
-    break;
-  }
-
   case 'doctor':
     await doctor();
     break;
 
   case 'extension':
     printExtension();
-    // --reveal：在访达 / 资源管理器里选中扩展文件夹，用户拖进 chrome://extensions 就装好了。
-    // 引导页故意不放本机路径（它每台机器都不一样，还常常躺在 npx 缓存里），
-    // 「路径」这件事交给终端和文件管理器，页面只教手势。
+    // --reveal：在访达 / 资源管理器里选中扩展文件夹，拖进 chrome://extensions 就装好了。
     if (has('--reveal')) revealExtensionDir();
     break;
 
@@ -123,16 +116,14 @@ switch (cmd) {
   }
 
   default:
-    console.log(`Claymore Piko — 让 Piko 和任何 AI agent 操控你自己的 Chrome
+    console.log(`Claymore Piko 浏览器 —— Piko 的内部工具（桌面 App 和云端 Home 自带，不发布到 npm）
 
-  piko-browser install        一键安装：自动配好所有 agent + 引导装扩展
-  piko-browser mcp            启动 MCP server（agent 配置里填这条，install 会自动写）
+  piko-browser mcp            启动 MCP server（Piko 给每个会话起的就是这条）
   piko-browser doctor         诊断连接问题
   piko-browser extension      打印扩展加载步骤
   piko-browser audit [-n 30]  看最近的浏览器操作记录
   piko-browser audit --stats [--days 7]   真实 agent 的用法统计：回合数、哪类调用最多、在哪儿浪费
   piko-browser bridge --foreground   前台跑桥（调试用）
-  piko-browser install --dry-run     只看会改哪些配置，不写
 
 配置目录 ${HOME}`);
 }

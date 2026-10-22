@@ -138,16 +138,9 @@ test('钉住的 label 随 hello 送到桥，再盖到发给扩展的命令上', 
   ws.close(); ext.close(); bridge.close();
 });
 
-test('从来没连上过扩展时，NO_EXTENSION 提示去安装并带上安装地址', async () => {
+test('NO_EXTENSION 只转述桥的原话，不教用户怎么修', async () => {
+  // 本机和云端 Home 修法不一样（云端扩展是预装的，用户点不到图标），
+  // 该让用户做什么由 Piko 的节点提示词说。
   const { hint } = await import('../src/mcp-server.js');
-  const install = hint({ code: 'NO_EXTENSION', neverConnected: true, message: 'x' });
-  assert.match(install, /安装并启用 Claymore Piko 扩展/);
-  assert.doesNotMatch(install, /重连/);
-  process.env.HUASHU_CHROME_INSTALL_URL = 'https://example.com/piko';
-  try {
-    assert.match(hint({ code: 'NO_EXTENSION', neverConnected: true, message: 'x' }), /https:\/\/example\.com\/piko/);
-  } finally {
-    delete process.env.HUASHU_CHROME_INSTALL_URL;
-  }
-  assert.match(hint({ code: 'NO_EXTENSION', message: 'x' }), /重连/);
+  assert.equal(hint({ code: 'NO_EXTENSION', message: 'x' }), '[NO_EXTENSION] x');
 });

@@ -185,6 +185,7 @@ test('同实例换连接 —— 被顶掉那条上的在途命令走断线宽限
   const r = await res;
   assert.equal(r.error?.code, 'NO_EXTENSION', `收到的是：${JSON.stringify(r)}`);
   assert.match(r.error.message, /可能已经在页面上生效/, '要提醒 agent 别把一次点击做成两次');
+  assert.doesNotMatch(r.error.message, /没有发给浏览器/, '在途命令已经递出去了，不能说没发');
   // 不改派：旧连接可能已经执行过，再发给新连接就是双击
   await settle(100);
   assert.equal(a2.cmds.length, 0, '被顶掉那条上的命令不该再发给新连接');

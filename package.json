@@ -1,7 +1,8 @@
 {
   "name": "claymore-piko-browser",
-  "version": "1.5.5",
-  "description": "Claymore Piko 浏览器扩展：让 Piko 和任何 AI agent 操控你自己的 Chrome——带着全部登录态。基于 alchaincyf/huashu-chrome（MIT）。",
+  "version": "1.5.6",
+  "private": true,
+  "description": "Claymore Piko 浏览器扩展：让 Piko 的 Bot 操控你自己的 Chrome——带着全部登录态。只给 Piko 用，不发布到 npm。基于 alchaincyf/huashu-chrome（MIT）。",
   "type": "module",
   "bin": {
     "piko-browser": "src/cli.js"
@@ -26,15 +27,6 @@
     "@modelcontextprotocol/sdk": "^1.22.0",
     "ws": "^8.18.3"
   },
-  "keywords": [
-    "mcp",
-    "chrome",
-    "browser-automation",
-    "claude-code",
-    "codex",
-    "cursor",
-    "ai-agent"
-  ],
   "license": "MIT",
   "author": "Claymore (based on huashu-chrome by 花叔 alchaincyf)",
   "repository": {

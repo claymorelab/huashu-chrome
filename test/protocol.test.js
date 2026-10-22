@@ -2,6 +2,8 @@
 // 重点测的是 verifyClient：网页能不能连上桥，是这个产品最要命的一条边界。
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import WebSocket from 'ws';
 import { startBridge } from '../src/bridge.js';
 import { VERSION, EXT_VERSION } from '../src/lib/version.js';
@@ -63,9 +65,12 @@ test('只放 Claymore Piko 扩展进来：别的扩展（包括上游 huashu-chr
 });
 
 test('桥认的扩展 ID 就是 manifest 公钥算出来的那个', async () => {
-  const { extensionId } = await import('../src/install.js');
+  // 扩展 ID = manifest 公钥 sha256 的前 32 个十六进制位，每位 0-f 映射成 a-p
+  // 本文件的 URL 是桥地址，这里要的是全局那个 URL 类
+  const { key } = JSON.parse(fs.readFileSync(new globalThis.URL('../extension/manifest.json', import.meta.url), 'utf8'));
+  const hex = crypto.createHash('sha256').update(Buffer.from(key, 'base64')).digest('hex').slice(0, 32);
   assert.equal(EXTENSION_ID, 'afnglaiimnjpcdnnihploelgnoalaogm');
-  assert.equal(extensionId(), EXTENSION_ID);
+  assert.equal([...hex].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join(''), EXTENSION_ID);
 });
 
 test('agent 用错 token 连不上', async () => {
@@ -130,8 +135,11 @@ test('扩展一直不来，排队的命令最终仍要失败——且话要说�
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'NO_EXTENSION');
   // 老话术「确认 Chrome 开着、扩展已启用」会把人骗去点重载，而真实情况多半是
-  // 「再等一下它自己就回来了」。新话术必须说出「被浏览器回收」这件事。
-  assert.match(r.error.message, /回收|等/, '错误信息没说清扩展是被浏览器回收了');
+  // 「再等一下它自己就回来了」。新话术要说出桥已经等过。
+  assert.match(r.error.message, /等/, '错误信息没说桥已经等过');
+  // 排队的命令从没递给扩展。只说「断开」，Bot 会跟用户讲「页面打开到一半」（#1308）
+  assert.match(r.error.message, /没有发给浏览器/);
+  assert.doesNotMatch(r.error.message, /可能已经/);
   agent.close();
 });
 
