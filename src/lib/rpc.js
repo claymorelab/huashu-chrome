@@ -84,7 +84,7 @@ export class BridgeClient {
       if (!spawned) spawned = tryStartBridge();
       await sleep(250);
     }
-    throw new Error('连不上 Claymore Piko 的浏览器桥。跑 `npx claymore-piko-browser doctor` 看看哪儿卡住了');
+    throw new Error('连不上 Claymore Piko 的浏览器桥：本机的桥进程没起来，或者握手一直失败。');
   }
 
   #open(info) {
@@ -122,7 +122,7 @@ export class BridgeClient {
       if (!w) return;
       this.waiting.delete(msg.id);
       clearTimeout(w.timer);
-      msg.ok ? w.resolve(msg.data ?? {}) : w.reject(Object.assign(new Error(msg.error?.message || '命令失败'), { code: msg.error?.code || 'INTERNAL', neverConnected: msg.error?.neverConnected === true }));
+      msg.ok ? w.resolve(msg.data ?? {}) : w.reject(Object.assign(new Error(msg.error?.message || '命令失败'), { code: msg.error?.code || 'INTERNAL' }));
       return;
     }
     if (msg.type === 'event') {

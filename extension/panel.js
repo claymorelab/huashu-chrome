@@ -8,7 +8,7 @@
 // （panel:<tabId>），这里只订阅、只渲染。所有外部文字（agent 声明的意图、
 // 网页标题、client 名）一律 textContent——它们都可能源自被注入的页面。
 
-import { compat, compatNote, cmpVersion } from './compat.js';
+import { compat, compatNote } from './compat.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -49,7 +49,7 @@ async function renderPage() {
 
   box.textContent = '';
   if (!owners.length) {
-    box.appendChild(el('div', 'empty', '这一页没有 agent 在操作。下面列着它们各自在哪一页，点一下就能切过去。'));
+    box.appendChild(el('div', 'empty', '这一页没有 Bot 在操作。下面列着它们各自在哪一页，点一下就能切过去。'));
     return;
   }
 
@@ -116,7 +116,7 @@ async function renderSessions() {
   box.textContent = '';
   const rows = r?.sessions || [];
   if (!rows.length) {
-    box.appendChild(el('div', 'empty', '还没有 agent 在线。在 Claude Code、Codex 这类工具里让它用 Claymore Piko 做件事，这里就会出现。'));
+    box.appendChild(el('div', 'empty', '还没有 Bot 在线。在 Piko 里让 Bot 打开一个网页，这里就会出现。'));
     return rows;
   }
   for (const s of rows) {
@@ -132,26 +132,15 @@ async function renderSessions() {
 
 // ---------- 连接：三盏灯 ----------
 //
-// 用户以前只看得到一盏灯，分不清是扩展断了、本地端没起、还是根本没有 agent 在跑。
-// 每盏红灯旁边直接给能复制的修法。
+// 用户以前只看得到一盏灯，分不清是扩展断了、本地端没起、还是根本没有 Bot 在跑。
+// 每盏红灯旁边直接说怎么修。本地端由 Claymore Piko 桌面 App 自带，修法都落在 App 上。
 
-function light(state, name, sub, cmd) {
+function light(state, name, sub) {
   const row = el('div', 'light');
   const d = el('span', `dot ${state}`);
   const txt = el('div');
   txt.appendChild(el('div', 'name', name));
   if (sub) txt.appendChild(el('div', 'sub', sub));
-  if (cmd) {
-    const c = el('div', 'cmd');
-    const code = el('code', null, cmd);
-    const btn = el('button', 'btn ghost', '复制');
-    btn.onclick = async () => {
-      try { await navigator.clipboard.writeText(cmd); btn.textContent = '已复制'; } catch { btn.textContent = '请手动复制'; }
-      setTimeout(() => { btn.textContent = '复制'; }, 1600);
-    };
-    c.append(code, btn);
-    txt.appendChild(c);
-  }
   row.append(d, txt);
   return row;
 }
@@ -166,22 +155,20 @@ async function renderConn(sessionCount) {
   if (r.connected) {
     const level = compat({ ext: MINE, cli: r.bridge });
     const note = compatNote(level, { ext: MINE, cli: r.bridge });
-    const needCli = level === 'cli-old' || (level === 'protocol' && cmpVersion(MINE, r.bridge) > 0);
-    box.appendChild(light(note ? 'warn' : 'ok', `本地端 v${r.bridge || '?'}`, note || '已连接', needCli ? 'npx -y claymore-piko-browser@latest install' : null));
+    box.appendChild(light(note ? 'warn' : 'ok', `本地端 v${r.bridge || '?'}`, note || '已连接'));
     pill = note ? ['warn', '已连接（有更新）'] : ['ok', '已连接'];
   } else {
     const never = !r.lastRx;
     box.appendChild(light('bad', '本地端未连接',
-      never ? '还没装本地端，或者装了但还没有 agent 用过它（本地端由 agent 第一次调用时拉起）。在终端里跑这一行，它会自动配好你电脑上的 agent：'
-        : `上次收到心跳是 ${relTime(r.lastRx)}。先点下面的「重连」；不行再在终端跑：`,
-      never ? 'npx -y claymore-piko-browser@latest install' : 'npx claymore-piko-browser doctor'));
+      never ? '还没连上过 Piko。打开 Claymore Piko 桌面 App，Bot 第一次用浏览器时会自动连上。'
+        : `上次收到心跳是 ${relTime(r.lastRx)}。先点下面的「重连」；还不行就重启 Claymore Piko 桌面 App。`));
     if (r.offscreenError) box.appendChild(light('warn', '后台文档建不起来', r.offscreenError));
   }
   $('reconnRow').hidden = !!r.connected;
 
   box.appendChild(sessionCount
-    ? light('ok', `${sessionCount} 个 agent 在线`, '每个 agent 用自己的颜色，页面描边和标签组同色')
-    : light('', '暂无 agent 在线', '在你的 agent 里说一句「用 Claymore Piko 打开……」就会出现在这里'));
+    ? light('ok', `${sessionCount} 个 Bot 在线`, '每个 Bot 用自己的颜色，页面描边和标签组同色')
+    : light('', '暂无 Bot 在线', '在 Piko 里让 Bot 打开一个网页，这里就会出现'));
 
   $('pilldot').className = `dot ${pill[0]}`;
   $('pilltxt').textContent = pill[1];

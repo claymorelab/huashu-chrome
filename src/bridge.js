@@ -87,14 +87,18 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
   const waiting = [];
   const WAIT_CAP = 64;                 // 扩展长期不在时别无限堆积
   const WAIT_MAX = 40000;              // 一个 30s alarm 周期 + 余量
-  // 话术和 doctor、mcp-server 的 hint 保持一致：首选动作是扩展弹窗里的「重连」，
-  // 不是去 chrome://extensions——插件从来没消失过，去那儿只会把人引向「重装」。
-  const NO_EXT_MSG = '扩展没连上桥。桥已经替你等过一轮'
-    + `（最多 ${WAIT_MAX / 1000}s），它还没回来。让用户点一下浏览器工具栏的 Claymore Piko 图标 → 「重连」`
-    + '（插件没消失，只是这条连接断了）；Chrome 没开就先开；改过扩展代码才需要去 chrome://extensions 重载。';
+  // 这两句只说发生了什么，不教用户怎么修：同一个桥既跑在用户自己的电脑上，
+  // 也跑在云端 Home 里（扩展是预装的，用户点不到它的图标），修法两边不一样。
+  // 该让用户做什么由 Piko 给 Bot 的节点提示词说。
+  //
+  // 走到这里的命令都还在桥的队列里，从来没递给扩展——必须说清「没发出去」，
+  // 否则 Bot 会对用户说「页面打开到一半连接断了」（#1308）。「可能已经生效」
+  // 只属于执行途中断线那条路，见 orphan()。
+  const NO_EXT_MSG = `Claymore Piko 扩展没连上桥：桥等了一轮（最多 ${WAIT_MAX / 1000}s），它没有回来。`
+    + '这条命令没有发给浏览器，页面上什么都没发生。';
 
-  const NO_EXT_INSTALL_MSG = '这台电脑的 Chrome 从来没有连上过 Claymore Piko 扩展，多半是还没装。'
-    + '让用户在 Chrome 里安装并启用 Claymore Piko 扩展，装好后保持 Chrome 开着再重试。';
+  const NO_EXT_INSTALL_MSG = '这台电脑的 Chrome 从来没有连上过 Claymore Piko 扩展。'
+    + '这条命令没有发给浏览器，页面上什么都没发生。';
 
   let lastAgentAt = Date.now();
   let lastIdleState = '';         // 空闲状态变了才记一行，免得每拍刷屏   // 最近一次有 agent 连着或说话的时刻，空闲退出只看它
@@ -379,7 +383,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     const fail = () => {
       const neverConnected = !fs.existsSync(EXTENSION_SEEN_FILE);
       send(ws, { type: 'res', id: msg.id, ok: false, error: { code: 'NO_EXTENSION',
-        message: neverConnected ? NO_EXT_INSTALL_MSG : NO_EXT_MSG, neverConnected } });
+        message: neverConnected ? NO_EXT_INSTALL_MSG : NO_EXT_MSG } });
     };
     if (waiting.length >= WAIT_CAP) return fail();
 

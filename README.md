@@ -4,23 +4,23 @@ Claymore Piko browser extension, based on [alchaincyf/huashu-chrome](https://git
 
 # Claymore Piko 浏览器扩展
 
-<img src="media/architecture.png" alt="系统原理图：一条命令穿过五个器官——npm 包 → CLI → MCP server → 本地桥 → Chrome 扩展，最后落在你真实浏览器的真实按钮上" width="100%">
+<img src="media/architecture.png" alt="系统原理图：一条命令穿过 CLI → MCP server → 本地桥 → Chrome 扩展，最后落在你真实浏览器的真实按钮上" width="100%">
 
 > *「工具返回『已点击』不算数，页面真的动了才算。」*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-huashu--chrome-555)](https://github.com/alchaincyf/huashu-chrome)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#安装)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933?logo=node.js&logoColor=white)](#怎么装上)
 
 <br>
 
-**让 Piko 和任何 AI agent 操控你自己的 Chrome——带着你全部的登录态。**
+**让 Piko 的 Bot 操控你自己的 Chrome——带着你全部的登录态。**
 
-<sub>一个 MCP server + 一个 Chrome 扩展，22 个浏览器工具。Claude Code、Codex CLI、Cursor、Gemini CLI、Cline、Windsurf 通用。</sub>
+<sub>一个 MCP server + 一个 Chrome 扩展，22 个浏览器工具。只给 Claymore Piko 用：桌面 App 自带本地端，云端 Home 预装扩展。</sub>
 
 <br>
 
-[Claymore Piko 定制](#claymore-piko-定制) · [看效果](#看效果) · [安装](#安装) · [22 个工具](#工具按网页只有三种信息载体来分) · [经验回流](#越用越快经验回流) · [安全](#安全) · [排错](#排错)
+[Claymore Piko 定制](#claymore-piko-定制) · [看效果](#看效果) · [怎么装上](#怎么装上) · [22 个工具](#工具按网页只有三种信息载体来分) · [经验回流](#越用越快经验回流) · [安全](#安全) · [排错](#排错)
 
 </div>
 
@@ -28,14 +28,14 @@ Claymore Piko browser extension, based on [alchaincyf/huashu-chrome](https://git
 
 ```
 你：帮我把这份 CSV 里的 30 条客户信息录进 CRM
-agent：（打开你已登录的 CRM，逐条填表提交）
+Bot：（打开你已登录的 CRM，逐条填表提交）
 ```
 
 不用 API key，不用重新登录，不用处理验证码——**用的就是你此刻这个浏览器里的身份**。
 
-「npm 包？插件？CLI？还是 MCP？」——都是。它们是同一个产品的五个器官：npm 包是分发载体，
-CLI 是入口（install / mcp / doctor），MCP server 是 agent 的接口，本地桥是 127.0.0.1 上的
-常驻路由器，Chrome 扩展是手。上图就是一条命令穿过它们的全程。
+「插件？CLI？还是 MCP？」——都是。它们是同一个产品的四个器官：CLI 是入口（mcp / bridge / doctor），
+MCP server 是 Bot 的接口，本地桥是 127.0.0.1 上的常驻路由器，Chrome 扩展是手。
+上图就是一条命令穿过它们的全程（图里最左边的 npm 包是上游的分发方式，我们不走 npm）。
 
 ---
 
@@ -50,16 +50,12 @@ CLI 是入口（install / mcp / doctor），MCP server 是 agent 的接口，本
 | 桥端口 | 8898（扩展从 8898 往下探到 8894） | 8899–8903 |
 | 配置目录 | `~/.claymore-piko-browser` | `~/.huashu-chrome` |
 | MCP server 名 | `piko-browser` | `huashu-chrome` |
-| npm 包 / 命令 | `claymore-piko-browser` / `piko-browser` | `huashu-chrome` |
+| 包名 / 命令 | `claymore-piko-browser`（不发布到 npm）/ `piko-browser` | `huashu-chrome` |
 
 本机的桥只接受 Claymore Piko 扩展（按 Origin 里的扩展 ID 判定），别的扩展连不上。
 
-**装扩展**：Chrome 应用商店版本上架后会提供一键安装链接；现在用手动加载——`chrome://extensions`
-→ 打开「开发者模式」→「加载已解压的扩展程序」，选仓库里的 `extension/` 文件夹。
-扩展 ID 由 `manifest.json` 里的公钥固定，手动加载也是同一个 ID。
-
-npm 包还没发布。发布之前，文中的 `npx claymore-piko-browser <命令>` 在仓库目录里换成
-`node src/cli.js <命令>`。
+**npm 包不发布，以后也不会发布。** Piko 用的就是这个仓库的代码：桌面 App 打包时按固定提交下载源码包，
+自带 MCP server 和桥；云端 Home 预装 release 里签好的 CRX。用户要做的只有在 Chrome 里装上扩展，见[怎么装上](#怎么装上)。
 
 **宿主（Piko）可用的环境变量**——名字沿用上游，方便对照：
 
@@ -76,7 +72,7 @@ npm 包还没发布。发布之前，文中的 `npx claymore-piko-browser <命�
 
 ## 看效果
 
-装上之后，你在 agent 里说的是这种话：
+装上之后，你在 Piko 里对 Bot 说的是这种话：
 
 ```
 「查一下这本书在京东有几家在卖，评价怎么样」
@@ -106,13 +102,12 @@ npm 包还没发布。发布之前，文中的 `npx claymore-piko-browser <命�
 
 ## 为什么需要它
 
-浏览器控制这件事，现在的格局是：能拿到你真实登录态的，多半只给自家客户端用；
-对任何 agent 开放的，多半开的是一个干净的、没登录的浏览器。Claymore Piko 两头都要。
+浏览器控制这件事，现在的格局是：能拿到你真实登录态的，多半绑在别家客户端里；
+开放出来的，多半开的是一个干净的、没登录的浏览器。Claymore Piko 让 Piko 的 Bot 直接用你自己的 Chrome。
 
 | | **Claymore Piko** | Claude in Chrome | ChatGPT 扩展（Codex） | Playwright MCP | chrome-devtools-mcp | Browser Use |
 |---|---|---|---|---|---|---|
 | 用你日常的 Chrome，带真实登录态 | ✅ 就是眼前这个 | ✅ | ✅ | ⚠️ 要走扩展模式 | ⚠️ Chrome 144+ 逐次授权 | ⚠️ Harness 接管才行 |
-| 任何支持 MCP 的 agent 都能接 | ✅ 20+ 家通用 | ❌ 只限 Anthropic 客户端 | ❌ Codex CLI 用不了 | ✅ | ✅ | ✅ |
 | 不改启动参数、不开调试端口 | ✅ 装个扩展就行 | ✅ | ✅ | ⚠️ 扩展模式才免 | ❌ 要开远程调试 | ❌ 装 Chromium 或开远程调试 |
 | 多个 agent 同时干活互不抢页 | ✅ 每会话一槽，撞车当场拦 | ⚠️ 每会话一标签组 | ？官方未说明 | ✅ 每客户端一标签组 | ⚠️ 靠实验开关 | ⚠️ 共用一条道会抢 |
 | 出厂带站点经验，越用越快 | ✅ 二十多站实测笔记＋本机回流 | ❌ | ⚠️ 只有通用记忆 | ❌ | ❌ | ⚠️ 有，默认关闭 |
@@ -121,84 +116,44 @@ npm 包还没发布。发布之前，文中的 `npx claymore-piko-browser <命�
 
 核查日期 2026-09-09，每一格都对着官方文档或官方仓库填的，完整八方案矩阵和每格来源见
 [docs/对比.md](docs/对比.md)。两句公道话：Playwright MCP 的扩展模式也能拿到登录态、
-也有按客户端隔离，它缺的是站点经验和人工交接；Claude in Chrome 遇到验证码也会停下等你，
-它的问题是只给 Anthropic 自家客户端用。
+也有按客户端隔离，它缺的是站点经验和人工交接；Claude in Chrome 遇到验证码也会停下等你。
 
-## 安装
+## 怎么装上
 
-```bash
-npx claymore-piko-browser install
-```
+Piko 用户不碰命令行：
 
-一条命令：自动检测这台机器上装了哪些 agent、写好各自的 MCP 配置（动手前先备份，
-已配过的自动跳过；只想看不想写加 `--dry-run`），然后弹出引导页带你装扩展——
-**装扩展这一下必须你自己点，浏览器不允许脚本代劳**。
+1. **本机**：在 Chrome 里装上 Claymore Piko 扩展（应用商店版本上架前，团队内部用手动加载：
+   `chrome://extensions` → 打开「开发者模式」→「加载已解压的扩展程序」，选扩展文件夹），
+   然后打开 Claymore Piko 桌面 App。桌面 App 自带本地端，Bot 第一次用浏览器时会自动拉起桥、连上扩展。
+2. **云端 Home**：扩展已经预装在 Home 的浏览器里，什么都不用做。
 
-**它认得出哪些 agent**，分三层：
+扩展 ID 由 `manifest.json` 里的公钥固定，手动加载也是同一个 ID。
 
-1. **已知表** —— `src/agents.json` 列了 20 个：Claude Code、Codex CLI、Cursor、
-   Gemini CLI、Windsurf、Cline、Roo Code、Claude Desktop，以及 WorkBuddy、CodeBuddy、
-   Kimi Code、通义灵码、MiniMax Mavis、Trae、豆包、千问 / Qwen Code、Qoder、
-   DeepSeek、iFlow、OpenClaw。加一个只要往数组里加一行，不用改代码 —— 欢迎 PR。
-   不只是编程 agent：WorkBuddy、千问办公、豆包工作这类办公 agent，只要能配本地 MCP，
-   同样接得上——它们最常干的「查后台数据、填表、跨站搬运」正是登录态最要紧的活。
-2. **自动发现** —— 没列出来的也能认出来。`install` 会扫 home 下的点目录，
-   按预设文件名查找含`mcpServers`的配置；Codex的TOML另行适配。
-   这不是任意MCP客户端的通用安装器：OpenCode使用顶层`mcp`与命令数组，当前不支持自动写入，见下方手动配置。
-3. **都不匹配** —— 打印该填的 JSON，你自己贴。
+## 内部使用：从源码接 Claude Code / Codex
 
-**OpenCode手动配置**：依据[官方MCP文档](https://opencode.ai/docs/mcp-servers/)与[配置文档](https://opencode.ai/docs/config/)（2026-09-25核对），在现有全局配置`~/.config/opencode/opencode.json`或`opencode.jsonc`的`mcp`对象中合并以下条目，保留已有设置。实际配置位置以当前OpenCode版本及环境变量为准。
+这条路只给内部的人用，扩展界面里不提。克隆本仓库、`npm ci` 之后，把 MCP server 直接指向克隆里的
+`src/cli.js`（下面的 `<clone>` 换成克隆的绝对路径）。桥由 MCP server 第一次调用时自动拉起，不用手动开。
 
+**Claude Code** —— `~/.claude.json` 的 `mcpServers` 里加（或 `claude mcp add piko-browser -- node <clone>/src/cli.js mcp --client claude-code`）：
 ```json
-{
-  "mcp": {
-    "piko-browser": {
-      "type": "local",
-      "command": ["npx", "-y", "claymore-piko-browser", "mcp", "--client", "opencode"],
-      "enabled": true
-    }
-  }
-}
+{ "mcpServers": { "piko-browser": { "command": "node", "args": ["<clone>/src/cli.js", "mcp", "--client", "claude-code"] } } }
 ```
 
-Windows若无法解析`npx`，可按本机安装方式改用`npx.cmd`。这是手动配置说明，不表示`install`已支持OpenCode自动安装。
-
-已知客户端的Windows / macOS / Linux配置路径按`src/agents.json`匹配。装完验证：
-
-```bash
-npx claymore-piko-browser doctor
-```
-
-看到「握手正常 · Chrome 扩展在线」就成了。桥进程由 agent 首次调用时自动拉起
-（doctor 发现桥没跑也会先拉一个再探），你不用手动开任何东西。
-
-<details>
-<summary>手动配置（不想让 install 碰你的配置文件）</summary>
-
-**Claude Code**
-```bash
-claude mcp add piko-browser -- npx -y claymore-piko-browser mcp --client claude-code
-```
-
-**Codex CLI** — `~/.codex/config.toml`
+**Codex** —— `~/.codex/config.toml`：
 ```toml
 [mcp_servers.piko-browser]
-command = "npx"
-args = ["-y", "claymore-piko-browser", "mcp", "--client", "codex"]
+command = "node"
+args = ["<clone>/src/cli.js", "mcp", "--client", "codex"]
 ```
 
-**Cursor / Gemini CLI / Windsurf / Claude Desktop** — 各自的 JSON 配置里加：
-```json
-{ "mcpServers": { "piko-browser": { "command": "npx", "args": ["-y", "claymore-piko-browser", "mcp"] } } }
+扩展照上面「怎么装上」装好。查连接：
+
+```bash
+node src/cli.js doctor
 ```
 
-`--client` 可以不写、写错也没关系：侧栏和审计日志里显示的是宿主在 MCP 握手里
-自报的身份（Claude Code / Codex CLI / Gemini CLI / OpenClaw …），这个参数只在宿主没报时兜底。
-
-扩展：`npx claymore-piko-browser extension` 打印目录，然后 `chrome://extensions`
-→ 开发者模式 → 加载已解压的扩展程序。
-
-</details>
+看到「握手正常 · Chrome 扩展在线」就成了。`--client` 可以不写、写错也没关系：侧栏和审计日志里显示的是宿主在 MCP 握手里
+自报的身份，这个参数只在宿主没报时兜底。本机同时开着 Piko 桌面 App 时，两边共用同一个桥和同一个扩展。
 
 ## 工具：按「网页只有三种信息载体」来分
 
@@ -369,9 +324,9 @@ agent 自己的截图里看不到任何标记（截图幕帘），它不会把�
 ## 架构
 
 ```
-Claude Code ──stdio──┐
-Codex CLI  ──stdio──┤→ MCP Server（每会话一个，无状态）
-Cursor     ──stdio──┘         │ ws://127.0.0.1:8898
+Piko 会话 ──stdio──┐
+Piko 会话 ──stdio──┤→ MCP Server（每会话一个，无状态）
+Piko 会话 ──stdio──┘         │ ws://127.0.0.1:8898
                     桥 Daemon（单例：路由 · 授权 · 审计）
                               │ Origin 白名单
                       Chrome 扩展 MV3
@@ -428,7 +383,7 @@ offscreen 万一建不起来，扩展不能整个哑掉。
 2. **敏感动作不自动升级**——提交 / 支付 / 删除 / 发布这类目标，即使普通事件毫无效果，
    也不会自动改用真实事件重试，避免重复执行。正则 + DOM 特征，不问模型。
 3. **全量审计**——每条命令落 `~/.claymore-piko-browser/audit.jsonl`，输入的文本做脱敏
-   （密码按输入框类型判断，跟长度无关）。`npx claymore-piko-browser audit` 随时查。
+   （密码按输入框类型判断，跟长度无关）。`node src/cli.js audit` 随时查。
 4. **连接边界**——桥只接受 `chrome-extension://` 来源的扩展连接，网页想连桥直接被拒；
    Node 侧 agent 走随桥启动轮换的 token。
 5. **受控标签页漂移警告**——标签页被你自己或站点导航走时，读写操作会在返回最前面
@@ -478,14 +433,14 @@ offscreen 万一建不起来，扩展不能整个哑掉。
 ## 排错
 
 ```bash
-npx claymore-piko-browser doctor            # 一条命令查完整条链路
-npx claymore-piko-browser audit -n 50       # 看 agent 到底点了什么
-npx claymore-piko-browser audit --stats     # 真实 agent 的用法统计：回合空档、哪类调用最多、哪些连着出现
+node src/cli.js doctor            # 一条命令查完整条链路
+node src/cli.js audit -n 50       # 看 Bot 到底点了什么
+node src/cli.js audit --stats     # 真实 Bot 的用法统计：回合空档、哪类调用最多、哪些连着出现
 ```
 
 | 症状 | 原因 | 处理 |
 |---|---|---|
-| `NO_EXTENSION` | 扩展到桥的那条连接断了（插件本身没消失） | 点工具栏的 Claymore Piko 图标 → 「重连」；Chrome 没开就先开；只有改过扩展代码才需要去 `chrome://extensions` 重载 |
+| `NO_EXTENSION` | 扩展没连上桥，命令没有发给浏览器（执行途中断开的那种会说「可能已经生效」） | 本机：点工具栏的 Claymore Piko 图标 → 「重连」；图标都没有就去 `chrome://extensions` 确认扩展装着并已启用；还不行就重启 Claymore Piko 桌面 App。云端 Home：稍后再试，或重启云电脑 |
 | `NEEDS_L2` | 这一步要真实输入事件，但没授权 | 点开扩展图标，按一下「启用高保真模式」 |
 | `L2_BUSY` | 调试器被占用 | 多半是你自己开着 DevTools——一个标签页只允许一个调试器。已自动降级 |
 | `STALE_SNAPSHOT` | 页面变了，ref 全作废 | 正常现象，agent 会自己重拍 |
@@ -522,11 +477,10 @@ node src/cli.js bridge --foreground
 ```
 huashu-chrome/
 ├── src/
-│   ├── cli.js              # 入口：install / mcp / bridge / doctor / audit / extension
+│   ├── cli.js              # 入口：mcp / bridge / doctor / audit / extension
 │   ├── mcp-server.js       # 22 个工具的定义与握手 instructions
 │   ├── bridge.js           # 127.0.0.1 常驻单例：路由 · 授权 · 审计 · 多会话
-│   ├── install.js          # 检测 agent、写 MCP 配置、拉起扩展引导页
-│   └── agents.json         # 已知 agent 表，加一行就多支持一个
+│   └── agents.json         # 已知 MCP 宿主的显示名
 ├── extension/              # Chrome MV3 扩展：content script · offscreen · debugger · 侧栏
 ├── docs/
 │   ├── 能力模型.md          # 三层信息载体的完整推演，每条规则跟着撞出它的那堵墙
@@ -574,13 +528,12 @@ MIT License © [花叔 Huashu](https://github.com/alchaincyf) · © Claymore
 
 ## English
 
-**Claymore Piko** (a fork of huashu-chrome) lets Piko and any MCP-capable AI agent drive *your own* Chrome — with all your logins
-already in it. It is an MCP server plus a Chrome extension, 22 browser tools, installed with one
-command. No API keys, no separate headless browser, no re-login, no captcha farm: the agent acts
-as you, in the browser you already have open.
+**Claymore Piko** (a fork of huashu-chrome) lets Piko's Bots drive *your own* Chrome — with all your logins
+already in it. It is an MCP server plus a Chrome extension, 22 browser tools. No API keys, no separate
+headless browser, no re-login, no captcha farm: the Bot acts as you, in the browser you already have open.
 
-Works with Claude Code, Codex CLI, Cursor, Gemini CLI, Cline, Windsurf and ~20 other agents
-(`npx claymore-piko-browser install` detects what is on your machine and writes each one's MCP config).
+It serves Claymore Piko only. The npm package is not published: the Piko desktop app bundles this
+repository at a pinned commit, and the cloud Home preinstalls the signed CRX from the releases.
 
 Four ideas that make it different from a headless-browser MCP:
 
@@ -607,7 +560,8 @@ You can also see it working: controlled tabs join a colored tab group, the page 
 outline, a breathing cursor and a small cockpit — all of which are invisible to the agent's own
 screenshots, so it never mistakes our overlay for a page element.
 
-**Install**: `npx claymore-piko-browser install`, then load the extension unpacked from
-`chrome://extensions` (Developer mode → Load unpacked → `extension/`; the Chrome Web Store link comes later;
-browsers do not let scripts do that part). Extension ID: `afnglaiimnjpcdnnihploelgnoalaogm`; bridge port 8898;
-config dir `~/.claymore-piko-browser`. Verify with `npx claymore-piko-browser doctor`.
+**Install**: install the Claymore Piko extension in Chrome and open the Claymore Piko desktop app; a Bot
+connects the first time it uses the browser. Internal users can also point Claude Code or Codex at a source
+checkout (`node <clone>/src/cli.js mcp --client claude-code`, see 内部使用 above) and check it with
+`node src/cli.js doctor`. Extension ID: `afnglaiimnjpcdnnihploelgnoalaogm`; bridge port 8898;
+config dir `~/.claymore-piko-browser`.

@@ -480,8 +480,8 @@ const TOOLS = [
       'Reload the Claymore Piko extension (chrome.runtime.reload()) so an updated build takes effect — ' +
       'no manual chrome://extensions visit needed. ~2s; bridge auto-reconnects, tabs keep state. ' +
       'DISRUPTIVE: the extension is shared by every tab and every other agent session on this machine — ' +
-      'anything mid-flight elsewhere gets cut. Only call right after installing/updating, or when ' +
-      '\`doctor\`/a version-mismatch warning says to — never speculatively.',
+      'anything mid-flight elsewhere gets cut. Only call right after the extension was updated, or when ' +
+      'a version-mismatch warning says to — never speculatively.',
     inputSchema: { type: 'object', properties: {} },
   },
 ];
@@ -795,25 +795,12 @@ export async function fetchPages(bridge, args) {
 }
 
 // 错误不只报「什么坏了」，还报「下一步该干嘛」——省掉 agent 一轮瞎试
-// 宿主可以用 HUASHU_CHROME_INSTALL_URL 给出扩展的安装地址（商店上架后填商店链接）。
-function installHint(env = process.env) {
-  const url = String(env.HUASHU_CHROME_INSTALL_URL ?? '').trim();
-  return '用户的 Chrome 还没装 Claymore Piko 扩展（或从来没连上过）。别重试这条命令——'
-    + (url ? `请用户打开 ${url} 安装并启用 Claymore Piko 扩展` : '请用户在 Chrome 里安装并启用 Claymore Piko 扩展')
-    + '，装好后保持 Chrome 开着，再继续刚才的任务。';
-}
-
+//
+// NO_EXTENSION 不在这张表里：桥的原话已经说清了发生什么（命令有没有发出去），
+// 而该让用户做什么，本机和云端 Home 不一样（云端扩展是预装的，用户点不到图标），
+// 由 Piko 给 Bot 的节点提示词说。
 export function hint(e) {
-  if (e.code === 'NO_EXTENSION' && e.neverConnected) return `[NO_EXTENSION] ${e.message}\n→ ${installHint()}`;
   const map = {
-    // 老话术是「确认 Chrome 开着、扩展已启用，然后重试」，它把人引向了错误的动作：
-    // 绝大多数 NO_EXTENSION 其实是「Chrome 把扩展的后台进程回收了，几秒后自己回来」，
-    // 而桥现在已经替你等过一轮了——还失败就说明真的不是等一下能解决的。
-    // 和 doctor、桥的 NO_EXT_MSG 同一套话：首选动作是弹窗里的「重连」。
-    // 老话术让人去 chrome://extensions，而插件从来没消失过——那条路的终点是「重装」，
-    // 重装恰好重启了扩展、连上了，于是反过来坐实了「插件消失了」这个误判（8-31 笔记）。
-    NO_EXTENSION: '扩展没连上桥，桥已经替你等过一轮了。别再重试同一条命令——'
-      + '让用户点浏览器工具栏的 Claymore Piko 图标 → 「重连」（插件没消失，只是连接断了）；Chrome 没开就先开。',
     STALE_SNAPSHOT: '页面已经变了，之前的 ref 全部作废。重新调用 snapshot，用新 ref 再点。',
     REF_NOT_FOUND: '这个 ref 在页面上找不到了。重新 snapshot。',
     NOT_INTERACTABLE: '元素当前不可点（被遮挡、隐藏或 disabled）。先 wait，或换一个目标。',
