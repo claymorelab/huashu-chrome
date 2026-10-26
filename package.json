@@ -1,6 +1,6 @@
 {
   "name": "claymore-piko-browser",
-  "version": "1.5.7",
+  "version": "1.5.8",
   "private": true,
   "description": "Claymore Piko 浏览器扩展：让 Piko 的 Bot 操控你自己的 Chrome——带着全部登录态。只给 Piko 用，不发布到 npm。基于 alchaincyf/huashu-chrome（MIT）。",
   "type": "module",
