@@ -269,6 +269,21 @@ test('只发请求不改页面的点击：报出请求，不判「没反应」�
   assert.doesNotMatch(r.text, /已自动改用真实事件/);
 });
 
+test('写请求旁证不往页面里放东西：点完之后 fetch 还是原生的', async () => {
+  await go();
+  await c.call('click', { selector: '#favBtn' });
+  assert.equal(await val('String(window.fetch).includes("[native code]") && String(XMLHttpRequest.prototype.send).includes("[native code]") && !("__hcW" in window)'), 'true');
+});
+
+test('network 的钩子只挂在抓过包的站点上，别的站点的页面不受影响', async () => {
+  await go();
+  await c.call('network', {});
+  await c.call('navigate', { url: `http://localhost:${PORT}/playground.html?t=other` });
+  assert.equal(await val('"__hcNet" in window'), 'false');
+  await go();
+  assert.equal(await val('"__hcNet" in window'), 'true');
+});
+
 test('焦点落到目标自己身上不算「页面有反应」', async () => {
   await go();
   // 点击必然让目标获得焦点（L1 显式 focus，L2 由浏览器聚焦），
