@@ -1,5 +1,5 @@
 // 首装欢迎页：实时探测本地端，连上就变绿。
-// 本地端由 Claymore Piko 桌面 App 自带，Bot 第一次用浏览器时拉起，用户不用另装什么。
+// 本地端由 Claymore Piko 桌面 App 自带，或者由 install 配进用户自己的 agent；都是第一次用浏览器时拉起。
 
 const copy = (btnId, srcId) => {
   const btn = document.getElementById(btnId);
@@ -9,6 +9,7 @@ const copy = (btnId, srcId) => {
   };
 };
 copy('copy', 'say');
+copy('copy2', 'cmd');
 
 async function poll() {
   const r = await chrome.runtime.sendMessage({ __hcPopup: 'status' }).catch(() => null);
@@ -16,7 +17,7 @@ async function poll() {
     document.getElementById('step2').classList.add('done');
     document.querySelector('#step2 .n').textContent = '✓';
     document.getElementById('live').classList.add('ok');
-    document.getElementById('livetxt').textContent = `已连上 Piko（本地端 v${r.bridge || '?'}）。可以去让 Bot 干活了。`;
+    document.getElementById('livetxt').textContent = `已连上（本地端 v${r.bridge || '?'}）。可以去让 Bot 或 agent 干活了。`;
     return;
   }
   setTimeout(poll, 2000);

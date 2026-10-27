@@ -116,7 +116,7 @@ async function renderSessions() {
   box.textContent = '';
   const rows = r?.sessions || [];
   if (!rows.length) {
-    box.appendChild(el('div', 'empty', '还没有 Bot 在线。在 Piko 里让 Bot 打开一个网页，这里就会出现。'));
+    box.appendChild(el('div', 'empty', '还没有 Bot 在线。在 Piko，或者 Claude Code、Codex 这类 agent 里让它打开一个网页，这里就会出现。'));
     return rows;
   }
   for (const s of rows) {
@@ -133,7 +133,7 @@ async function renderSessions() {
 // ---------- 连接：三盏灯 ----------
 //
 // 用户以前只看得到一盏灯，分不清是扩展断了、本地端没起、还是根本没有 Bot 在跑。
-// 每盏红灯旁边直接说怎么修。本地端由 Claymore Piko 桌面 App 自带，修法都落在 App 上。
+// 每盏红灯旁边直接说怎么修。本地端由 Claymore Piko 桌面 App 自带，或者由 install 配进用户自己的 agent，两条路的修法并列。
 
 function light(state, name, sub) {
   const row = el('div', 'light');
@@ -160,15 +160,15 @@ async function renderConn(sessionCount) {
   } else {
     const never = !r.lastRx;
     box.appendChild(light('bad', '本地端未连接',
-      never ? '还没连上过 Piko。打开 Claymore Piko 桌面 App，Bot 第一次用浏览器时会自动连上。'
-        : `上次收到心跳是 ${relTime(r.lastRx)}。先点下面的「重连」；还不行就重启 Claymore Piko 桌面 App。`));
+      never ? '还没连上过。用 Piko 的话打开 Claymore Piko 桌面 App；用 Claude Code、Codex 这类 agent 的话在终端跑 npx -y claymore-piko-browser@latest install。第一次用浏览器时会自动连上。'
+        : `上次收到心跳是 ${relTime(r.lastRx)}。先点下面的「重连」；还不行就重启 Claymore Piko 桌面 App，用 agent 的话在终端跑 npx claymore-piko-browser doctor 看卡在哪一步。`));
     if (r.offscreenError) box.appendChild(light('warn', '后台文档建不起来', r.offscreenError));
   }
   $('reconnRow').hidden = !!r.connected;
 
   box.appendChild(sessionCount
     ? light('ok', `${sessionCount} 个 Bot 在线`, '每个 Bot 用自己的颜色，页面描边和标签组同色')
-    : light('', '暂无 Bot 在线', '在 Piko 里让 Bot 打开一个网页，这里就会出现'));
+    : light('', '暂无 Bot 在线', '在 Piko 或你的 agent 里让它打开一个网页，这里就会出现'));
 
   $('pilldot').className = `dot ${pill[0]}`;
   $('pilltxt').textContent = pill[1];
