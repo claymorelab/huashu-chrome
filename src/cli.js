@@ -59,7 +59,8 @@ switch (cmd) {
       delete params.path;
     }
     try {
-      const data = await c.call(argv[1], params, { tabId: params.tabId });
+      const { callBudget } = await import('./mcp-server.js');
+      const data = await c.call(argv[1], params, { tabId: params.tabId, timeoutMs: callBudget(argv[1], params) });
       // download 走浏览器原生下载，文件先落在 Chrome 的下载目录，再挪到 savePath。
       // 不做这一步，CLI 路径的 savePath 会被静默忽略——工具报成功，文件却不在承诺的位置。
       if (data?.path && params.savePath) {
