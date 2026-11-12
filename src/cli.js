@@ -31,7 +31,8 @@ switch (cmd) {
 
   case 'bridge': {
     const { startBridge } = await import('./bridge.js');
-    startBridge({ port: Number(flag('--port', DEFAULT_PORT)), foreground: has('--foreground') });
+    startBridge({ port: Number(flag('--port', DEFAULT_PORT)), foreground: has('--foreground'),
+      ownerPid: Number(flag('--owner-pid', 0)) || undefined });
     break;
   }
 
