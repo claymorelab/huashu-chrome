@@ -48,7 +48,8 @@ const SESSION_END_GRACE_MS = 60000;
 // 宿主拥有的桥：ownerPid 指向的进程（Piko 桌面端）还活着，就不做空闲退出。
 // Windows 上 Codex 把每个 MCP server 放进 kill-on-close、不许 breakaway 的 job，
 // MCP server 拉起的桥会跟着那个会话的 server 一起死，把别的会话也一并断掉；
-// 所以桌面端在 job 之外先起桥、把自己的 pid 交过来。宿主退出后照常空闲退出。
+// 所以桌面端在 job 之外先起桥、把自己的 pid 交过来（记进 bridge.json，宿主据此认出自己的桥）。
+// 宿主退出后照常空闲退出。
 function alive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
@@ -520,7 +521,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
 
   const ready = new Promise((resolve) => {
     wss.on('listening', () => {
-      if (writeInfo) writeBridgeInfo({ port, token, pid: process.pid, version: VERSION, startedAt: new Date().toISOString() });
+      if (writeInfo) writeBridgeInfo({ port, token, pid: process.pid, version: VERSION, startedAt: new Date().toISOString(), ...(ownerPid ? { ownerPid } : {}) });
       log(`桥已启动 ws://127.0.0.1:${port}`);
       resolve();
     });
