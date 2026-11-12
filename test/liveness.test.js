@@ -5,6 +5,7 @@
 // 会回 pong 的连接活着，不会回的才是真半开。
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import WebSocket from 'ws';
 import { startBridge } from '../src/bridge.js';
 import { VERSION } from '../src/lib/version.js';
@@ -144,6 +145,25 @@ test('不回协议层 pong 的 agent 被判死并摘出在线名单', async () =
     assert.equal(alive.readyState, WebSocket.OPEN, '会回 pong 的 agent 不该被切断');
     alive.close();
   } finally {
+    b.close();
+  }
+});
+
+// 宿主拥有的桥：宿主进程活着就不空闲退出，宿主一走照常退。
+test('有 ownerPid 时，宿主活着就不空闲退出，宿主退出后照常退', async () => {
+  const owner = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  let resolveExit;
+  const exited = new Promise((r) => { resolveExit = r; });
+  const b = startBridge({ port: PORT + 3, token: 'f'.repeat(64), writeInfo: false, tickMs: 50, idleExitMs: 200,
+    exitWhenIdle: true, ownerPid: owner.pid, onIdleExit: () => resolveExit() });
+  await b.ready;
+  try {
+    const early = await Promise.race([exited.then(() => 'exited'), sleep(800).then(() => 'stayed')]);
+    assert.equal(early, 'stayed', '宿主还在时桥不该空闲退出');
+    owner.kill();
+    await exited;
+  } finally {
+    owner.kill();
     b.close();
   }
 });

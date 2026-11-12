@@ -45,12 +45,21 @@ const ORPHAN_GRACE_MS = 15000;       // 扩展断开时在途命令的宽限：�
 // 让扩展关掉它的窗口。桥换代、MCP 重启都在这个窗口里回来，不会误关。
 const SESSION_END_GRACE_MS = 60000;
 
+// 宿主拥有的桥：ownerPid 指向的进程（Piko 桌面端）还活着，就不做空闲退出。
+// Windows 上 Codex 把每个 MCP server 放进 kill-on-close、不许 breakaway 的 job，
+// MCP server 拉起的桥会跟着那个会话的 server 一起死，把别的会话也一并断掉；
+// 所以桌面端在 job 之外先起桥、把自己的 pid 交过来（记进 bridge.json，宿主据此认出自己的桥）。
+// 宿主退出后照常空闲退出。
+function alive(pid) {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
 // writeInfo=false 供测试用：不写 bridge.json，否则测试桥的 token 会盖掉
 // 真在跑的那个桥，用户所有 agent 会话当场断连。
 export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo = true, orphanGraceMs = ORPHAN_GRACE_MS,
   silenceMs = EXT_SILENCE_MS, probeMs = EXT_PROBE_MS, tickMs = 20000,
   idleExitMs = IDLE_EXIT_MS, exitWhenIdle = writeInfo, onIdleExit = () => process.exit(0),
-  sessionEndGraceMs = SESSION_END_GRACE_MS } = {}) {
+  sessionEndGraceMs = SESSION_END_GRACE_MS, ownerPid } = {}) {
   ensureHome();
 
   const agents = new Set();      // role=agent 的连接
@@ -512,7 +521,7 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
 
   const ready = new Promise((resolve) => {
     wss.on('listening', () => {
-      if (writeInfo) writeBridgeInfo({ port, token, pid: process.pid, version: VERSION, startedAt: new Date().toISOString() });
+      if (writeInfo) writeBridgeInfo({ port, token, pid: process.pid, version: VERSION, startedAt: new Date().toISOString(), ...(ownerPid ? { ownerPid } : {}) });
       log(`桥已启动 ws://127.0.0.1:${port}`);
       resolve();
     });
@@ -577,7 +586,8 @@ export function startBridge({ port = DEFAULT_PORT, token = newToken(), writeInfo
     const idleState = agents.size === 0 ? `空闲：pending=${pending.size} waiting=${waiting.length}` : '';
     if (idleState && idleState !== lastIdleState) log(`没有 agent 连着（${idleState}），${Math.round(idleExitMs / 60000)} 分钟后自行退出`);
     lastIdleState = idleState;
-    if (exitWhenIdle && agents.size === 0 && pending.size === 0 && !waiting.length && Date.now() - lastAgentAt > idleExitMs) {
+    if (exitWhenIdle && agents.size === 0 && pending.size === 0 && !waiting.length && Date.now() - lastAgentAt > idleExitMs
+      && !(ownerPid && alive(ownerPid))) {
       log(`${Math.round(idleExitMs / 60000)} 分钟没有 agent，桥自行退出`);
       clearInterval(idleTimer);
       onIdleExit();
