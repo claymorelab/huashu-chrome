@@ -56,9 +56,10 @@ test('agent 能通过 stdio 挂上 MCP server 并拿到工具表', async () => {
   //   unpacked 扩展代码只能靠人去 chrome://extensions 点——不该让「扩展怎么把
   //   自己更新到最新代码」这件事一直靠人工。描述里的 DISRUPTIVE 警告不能省：
   //   这个命令影响的是同一台机器上*所有*标签页和*所有*其他 agent 会话共享的
-  //   那一个扩展实例，说清楚代价比省字符更重要）
+  //   那一个扩展实例，说清楚代价比省字符更重要
+  //   21800 → 22052：保留原有工具指导，明确截图像素、CSS px 和截图尺寸上限（2026-11-20））
   const total = tools.reduce((n, t) => n + t.description.length + JSON.stringify(t.inputSchema).length, 0);
-  assert.ok(total < 21800, `工具表膨胀到 ${total} 字符了，压回 21800 以内`);
+  assert.ok(total < 22052, `工具表膨胀到 ${total} 字符了，压回 22052 以内`);
 
   // click 必须强制要 snapshotId，否则 ref 防呆整套失效
   assert.deepEqual(tools.find((t) => t.name === 'type').inputSchema.required, ['text']);

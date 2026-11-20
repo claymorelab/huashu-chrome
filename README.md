@@ -191,7 +191,7 @@ npx claymore-piko-browser doctor
 
 | 工具 | 干什么 |
 |---|---|
-| `screenshot` | 只在版式本身就是问题时用。开了高保真模式可以直接截后台标签页，不打断你。默认缩放 JPEG，`full:true` 返回尺寸预算内最大 PNG。坐标点击用该标签页最新截图的像素。计算出的 CSS 坐标用 `css:true`。`savePath` 仅落盘 |
+| `screenshot` | 只在版式本身就是问题时用。开了高保真模式可以直接截后台标签页，不打断你。默认缩放 JPEG（通常少约 64% 的像素，节省视觉 token），`full:true` 返回尺寸预算内最大 PNG。坐标点击用该标签页最新截图的像素。计算出的 CSS 坐标用 `css:true`。`savePath` 落盘不进上下文 |
 
 这套顺序不用你教给 agent——MCP server 在握手时就把它作为 `instructions` 下发了。
 

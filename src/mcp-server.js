@@ -72,8 +72,8 @@ const TOOLS = [
   },
   {
     name: 'click',
-    description: 'Click by ref or use x,y and dragTo in pixels of this tab’s latest screenshot. With no frame, use CSS px. '
-      + 'Pass css:true for computed CSS px. Reports CSS px.',
+    description: 'Click ONE element by ref. Know your next step already? Use `act` instead — each extra call costs a full model turn. '
+      + 'Canvas / map / game with nothing in the snapshot? Pass x,y (pixels of this tab\'s latest screenshot; use `css:true` for CSS px you computed in the page; with no screenshot, use CSS px) for a real click there; add dragTo for a drag.',
     inputSchema: {
       type: 'object',
       // 没有 button 参数：右键弹出的是浏览器原生菜单，扩展够不着，
@@ -179,15 +179,15 @@ const TOOLS = [
   {
     name: 'screenshot',
     description:
-      'Screenshot the controlled tab, including background tabs. Default is scaled JPEG. ' +
-      'full:true gives the largest PNG within the image limits.',
+      'Screenshot the controlled tab, background tabs included. Prefer snapshot / read_text — ' +
+      'they cost far less. Returned as a scaled JPEG by default; full:true for the largest PNG within the image limits (e.g. to read small text or measure pixels).',
     inputSchema: {
       type: 'object',
       properties: {
         tabId: TAB, ref: REF, snapshotId: SNAP,
         focus: { type: 'boolean', description: 'Bring the tab forward first. Interrupts the user — ask before using.' },
         savePath: { type: 'string', description: 'Absolute path to write the image instead of returning it inline.' },
-        full: { type: 'boolean', description: 'PNG at the image size limit.' },
+        full: { type: 'boolean', description: 'PNG within the image limits instead of the scaled JPEG.' },
       },
     },
   },
@@ -278,7 +278,7 @@ const TOOLS = [
     description:
       'Scroll to load more of a lazy list. Auto-detects inner scroll containers, stops early once height ' +
       'stops growing. Prefer network/fetch for bulk data. Background tabs render no frames, so an ' +
-      'IntersectionObserver-driven list may refuse to grow. Reported heights use CSS px.',
+      'IntersectionObserver-driven list may refuse to grow — the tool says so when it happens.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -352,7 +352,7 @@ const TOOLS = [
       + '`repeat` {steps,until,max} for pagination/load-more; `if` {cond,then,else} for optional banners; '
       + '`assert` {cond} stops unless the page matches. cond = {urlContains|selectorExists|textContains, '
       + 'not} (OR-ed), or {ref|selector, checked|value|text} for one element. Inside repeat use find/selector, '
-      + 'never ref. Coordinate clicks use the click tool’s x,y, dragTo and css fields.',
+      + 'never ref. Elsewhere: ref until the page re-renders, find after.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -451,8 +451,8 @@ const TOOLS = [
   {
     name: 'eval',
     description:
-      'Run JS in the page: expression or statements, last value returned, promises awaited. ' +
-      'Use click css:true for computed CSS points. Prefer query/read_text.',
+      'Run JS in the page (sees its vars): expression or statements, last value returned, promises awaited ' +
+      '(with `await`, `return` it). Prefer `query`/`read_text`.',
     inputSchema: {
       type: 'object',
       properties: { expr: { type: 'string' }, tabId: TAB },
