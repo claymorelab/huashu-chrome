@@ -110,6 +110,14 @@ export function collectRefs(steps) {
   return [...out];
 }
 
+// Saved coordinate steps use CSS pixels, including recipes recorded before
+// screenshots could have a frame. Explicitly keep those units during replay.
+export function cssRecipeStep(step) {
+  if (step?.do !== 'click' || step.ref || step.selector || step.find
+      || !('x' in step) || !('y' in step) || step.css === true) return step;
+  return { ...step, css: true };
+}
+
 export function toRecipe(steps, refInfo = {}) {
   if (!Array.isArray(steps) || steps.length < 3) return null;
   let n = 0, writes = 0, ok = true;
@@ -121,7 +129,7 @@ export function toRecipe(steps, refInfo = {}) {
   };
   const conv = (st) => {
     if (!st || typeof st !== 'object') return st;
-    const out = { ...st };
+    const out = { ...cssRecipeStep(st) };
     delete out.snapshotId;
     if (WRITES.has(out.do)) writes++;
     if (out.ref) { out.find = findOf(out.ref); delete out.ref; }

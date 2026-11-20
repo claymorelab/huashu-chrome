@@ -9,6 +9,7 @@
 // 漂移记录和 iframe 快照在 storage.session，连接状态由 offscreen 维护。
 
 import * as cdp from './cdp.js';
+import { FRAME_MODE, cssPoint, screenshotFrames, screenshotSize } from './screenshot-frame.js';
 import { compat, compatNote } from './compat.js';
 import { matchChallenge, hostOf, hostMatches, L2_ORIGINS_SEED } from './risk.js';
 import { CRED_URL, redactCreds } from './redact.js';
@@ -303,6 +304,7 @@ const NO_SLOT_CMDS = new Set(['tabs', 'download', 'reload', 'status']);
 async function onMessage(msg) {
   if (msg.type === 'event') return onBridgeEvent(msg);
   if (msg.type !== 'cmd') return;
+  let ctx, tabId;
   try {
     const handler = HANDLERS[msg.cmd];
     if (!handler) throw err('INTERNAL', `未知命令 ${msg.cmd}`);
@@ -315,8 +317,8 @@ async function onMessage(msg) {
     // 缺省 tabId 在这里统一解析成具体 tabId（会话级槽），handler 拿到的永远是实值。
     // ctx 只在本函数内现场传——SW 里两条命令的 await 会交错，绝不能用模块级变量存「当前消息」
     // windows：宿主要每个会话一个窗口（见下面「会话窗口」），桥替它盖的章
-    const ctx = { sid: msg.sid, live: msg.live, adopted: false, windows: msg.windows === true };
-    const tabId = NO_SLOT_CMDS.has(msg.cmd) ? msg.tabId : await resolveTab(msg.tabId, msg.sid, ctx);
+    ctx = { sid: msg.sid, live: msg.live, adopted: false, windows: msg.windows === true, screenshotFrame: msg.params?.[FRAME_MODE] === true };
+    tabId = NO_SLOT_CMDS.has(msg.cmd) ? msg.tabId : await resolveTab(msg.tabId, msg.sid, ctx);
     // 动手之前把这个会话的窗口提到前面：用户隔着远程桌面看的就是正在动手的那个
     if (ctx.windows && tabId && !NO_SLOT_CMDS.has(msg.cmd)) await raiseTab(tabId);
     // 显式 tabId 也进户口簿——await 而不是 void：命令完成后的 syncMark 从
@@ -346,8 +348,17 @@ async function onMessage(msg) {
       if (typeof data === 'string') return reply(msg.id, true, head + '\n' + data, msg.__k);
       if (data && typeof data.text === 'string') data.text = head + '\n' + data.text;
     }
+    if (ctx.screenshotFrame && msg.cmd === 'screenshot' && data.frame) {
+      const { frame, viewport, fallback, dataUrl } = data;
+      if (ctx.screenshotTicket && !screenshotFrames.finish(tabId, ctx.screenshotTicket, { ...frame, viewport, fallback })) {
+        throw err('STALE_SCREENSHOT', 'The screenshot viewport changed during capture. Take another screenshot.');
+      }
+      if (ctx.screenshotTicket) cdp.touch(tabId);
+      data = { dataUrl, frame: { tabId, ...frame }, fallback };
+    }
     reply(msg.id, true, data, msg.__k);
   } catch (e) {
+    if (ctx?.screenshotTicket) screenshotFrames.cancel(tabId, ctx.screenshotTicket);
     reply(msg.id, false, { code: e.code || 'INTERNAL', message: e.message || String(e) }, msg.__k);
   }
 }
@@ -1743,6 +1754,36 @@ function readWrites(log) {
 const writesText = (ws) => ws.slice(0, 4).map((w) => `${w.m} ${w.u} → ${w.s == null ? '未回' : w.s}`).join('；')
   + (ws.length > 4 ? `；…共 ${ws.length} 个` : '');
 
+async function readScreenshotViewport(tabId) {
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      if (!globalThis.__hcWatchScreenshotViewport) {
+        globalThis.__hcWatchScreenshotViewport = true;
+        const invalidate = () => chrome.runtime.sendMessage({ __hcScreenshotViewportResize: true }).catch(() => {});
+        addEventListener('resize', invalidate);
+        visualViewport?.addEventListener('resize', invalidate);
+      }
+      return { width: innerWidth, height: innerHeight, dpr: devicePixelRatio,
+        visualWidth: visualViewport?.width, visualHeight: visualViewport?.height, scale: visualViewport?.scale };
+    },
+  }).catch(() => []);
+  if (injection?.result) return { ...injection.result, documentId: injection.documentId };
+  // Restricted browser pages can be captured via captureVisibleTab. Tab size is in
+  // browser pixels, so account for Chrome's page zoom when script injection is blocked.
+  const [tab, zoom] = await Promise.all([chrome.tabs.get(tabId), chrome.tabs.getZoom(tabId)]);
+  return { width: tab.width / zoom, height: tab.height / zoom, dpr: zoom, url: tab.url };
+}
+
+function sameViewport(a, b) {
+  return Object.keys(a).every(key => a[key] === b[key]);
+}
+
+function invalidateScreenshotFrame(tabId) {
+  screenshotFrames.clear(tabId);
+  cdp.touch(tabId);
+}
+
 async function performCore(id, cmd, p, { blockSensitive = false } = {}, ctx) {
   const { frameId, params } = await prepare(id, p);
   const before = (await chrome.tabs.get(id)).url;
@@ -1759,19 +1800,32 @@ async function performCore(id, cmd, p, { blockSensitive = false } = {}, ctx) {
   if (cmd === 'click' && !hasTarget && Number.isFinite(params.x) && Number.isFinite(params.y)) {
     const base = await toContent(id, { __hc: 'locate', baselineOnly: true }, frameId).catch(() => null);
     const wmark = armWrites(id);
-    const x = Number(params.x), y = Number(params.y);
-    let note;
-    if (params.dragTo && Number.isFinite(params.dragTo.x) && Number.isFinite(params.dragTo.y)) {
-      await cdp.drag(id, x, y, Number(params.dragTo.x), Number(params.dragTo.y));
-      note = `已从 (${x}, ${y}) 拖到 (${params.dragTo.x}, ${params.dragTo.y})（真实事件）`;
-    } else {
-      await cdp.click(id, x, y);
-      note = `已点击坐标 (${x}, ${y})（真实事件）`;
-    }
+    const dragTo = Number.isFinite(params.dragTo?.x) && Number.isFinite(params.dragTo?.y) ? params.dragTo : null;
+    // A fallback frame may have been taken without a debugger. Attach before
+    // checking geometry since the debugger infobar can resize the viewport.
+    const { start, end, usedScreenshotCoordinates } = await cdp.withL2(id, async () => {
+      let frame = ctx?.screenshotFrame && params.css !== true ? await screenshotFrames.load(id) : null;
+      if (frame) {
+        const viewport = await readScreenshotViewport(id);
+        if (screenshotFrames.get(id) !== frame || !sameViewport(frame.viewport, viewport)) {
+          if (screenshotFrames.get(id) === frame) screenshotFrames.dropViewport(id);
+          frame = null;
+        }
+      }
+      const start = cssPoint(params, frame);
+      const end = dragTo && cssPoint(dragTo, frame);
+      if (end) await cdp.drag(id, start.x, start.y, end.x, end.y);
+      else await cdp.click(id, start.x, start.y);
+      return { start, end, usedScreenshotCoordinates: !!frame };
+    });
+    const describePoint = ({ x, y }) => `(${x}, ${y})`;
+    const note = end
+      ? `已从 ${describePoint(start)} 拖到 ${describePoint(end)}（CSS px，真实事件）`
+      : `已点击坐标 ${describePoint(start)}（CSS px，真实事件）`;
     const ev = await settle(id, frameId, { ...params, ref: undefined }, base?.baseline, before);
     ev.writes = readWrites(wmark);
     const after = (await chrome.tabs.get(id)).url;
-    return { note, l2note: '', ev, navigated: before !== after, upgraded: false };
+    return { note, l2note: '', ev, navigated: before !== after, upgraded: false, usedScreenshotCoordinates };
   }
   const loc = await toContent(id,
     // fields 要带过去：fill 没有单一目标，它的效果证据靠逐个字段的状态，
@@ -2010,6 +2064,7 @@ const HANDLERS = {
 
   async navigate(p, tabId, ctx) {
     const id = await resolveTab(tabId);
+    invalidateScreenshotFrame(id);
     if (p.url) await chrome.tabs.update(id, { url: p.url });
     else await toContent(id, { __hc: 'history', action: p.action || 'reload' });
     // 「DOM 可交互 + 安静下来」，比 load + sleep(300) 又快又准。
@@ -2050,6 +2105,7 @@ const HANDLERS = {
     let stopped = null;       // { label, why, i? } 一旦置上，整个剧本停机
     // 页面结构一旦变过，之前那份快照里的 ref 全部作废——只有 find 还能用
     let structureChanged = false;
+    let usedScreenshotCoordinates = false;
     let executed = 0;         // 实际执行的原子步数。repeat 展开后可能远超 20，
                               // EXEC_BUDGET 是防失控循环的硬闸
 
@@ -2102,6 +2158,7 @@ const HANDLERS = {
 
         const r = await performCore(id, cmd, { ...rest, snapshotId: p.snapshotId },
           { blockSensitive: !p.allowSensitive }, ctx);
+        usedScreenshotCoordinates ||= !!r.usedScreenshotCoordinates;
 
         if (r.blocked) {
           stopped = {
@@ -2217,7 +2274,8 @@ const HANDLERS = {
     ].filter(Boolean).join('\n');
 
     // 完整跑通才沉淀；停在半路的剧本不是「摸清了的流程」
-    const recipe = stopped ? null : toRecipe(steps, refInfo);
+    // Image points are specific to a screenshot and cannot be replayed as a recipe.
+    const recipe = stopped || usedScreenshotCoordinates ? null : toRecipe(steps, refInfo);
     return { ...snap, text: `${head}\n\n${snap.text}`, completed: !stopped, doneCount: doneTop, ...(recipe ? { recipe, recipeFrom: startUrl } : {}) };
   },
 
@@ -2545,8 +2603,12 @@ const HANDLERS = {
   //
   // 但真正的解法是根本不走那条路：CDP 的 Page.captureScreenshot 截的是**指定 target**，
   // 后台标签页照样能截，既不打断用户，也不存在截错页面的可能。
-  async screenshot(p, tabId) {
+  async screenshot(p, tabId, ctx) {
     const id = await resolveTab(tabId);
+    if (ctx.screenshotFrame && !p.savePath) {
+      await screenshotFrames.load(id);
+      ctx.screenshotTicket = screenshotFrames.begin(id);
+    }
     // 幕帘：先把我们画的一切（光标、边框、驾驶舱、ask）藏起来再拍。
     // 不藏的话 agent 会在自己的截图里看到一个页面上并不存在的发光箭头，
     // 把它当页面元素去理解甚至去点。应答回来时样式已生效：两条截图路径
@@ -2554,7 +2616,17 @@ const HANDLERS = {
     // 幕帘失败绝不能弄失败截图本身。
     const veiled = await veilMarks(id, true);
     try {
-      return await cdp.screenshot(id, { full: !!p.full });
+      if (!ctx.screenshotFrame) return await cdp.screenshot(id, { full: !!p.full });
+      const screenshot = await cdp.captureScreenshotFrame(id, !!p.full, () => readScreenshotViewport(id));
+      if (!sameViewport(screenshot.viewport, await readScreenshotViewport(id))) {
+        // The capture command temporarily applies its clip to the compositor.
+        // Wait one paint for any delayed restoration before comparing the viewport.
+        await sleep(40);
+        if (!sameViewport(screenshot.viewport, await readScreenshotViewport(id))) {
+          throw err('STALE_SCREENSHOT', 'The screenshot viewport changed during capture. Take another screenshot.');
+        }
+      }
+      return screenshot;
     } catch (e) {
       if (e.code !== 'NEEDS_L2' && e.code !== 'L2_BUSY') throw e;
       // 没有调试器权限时退回老路，前台保护一条不少
@@ -2584,9 +2656,26 @@ const HANDLERS = {
       // 「本来就在前台」那条最短路径）。
       if (veiled) await sleep(60);
       // 这条老路缩不了尺寸，至少换成 JPEG 省一截
-      return p.full
-        ? { dataUrl: await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }), scale: 1 }
-        : { dataUrl: await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 80 }), scale: 1 };
+      let switched = false;
+      const activation = (active) => { if (active.windowId === tab.windowId) switched = true; };
+      chrome.tabs.onActivated.addListener(activation);
+      try {
+        const viewport = ctx.screenshotFrame ? await readScreenshotViewport(id) : null;
+        if (!(await chrome.tabs.get(id)).active) throw err('STALE_SCREENSHOT', 'The visible tab changed during capture.');
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId,
+          p.full ? { format: 'png' } : { format: 'jpeg', quality: 80 });
+        if (switched || !(await chrome.tabs.get(id)).active) {
+          throw err('STALE_SCREENSHOT', 'The visible tab changed during capture.');
+        }
+        if (!viewport) return { dataUrl, scale: 1 };
+        if (!sameViewport(viewport, await readScreenshotViewport(id))) {
+          throw err('STALE_SCREENSHOT', 'The screenshot viewport changed during capture. Take another screenshot.');
+        }
+        const size = screenshotSize(dataUrl);
+        return { dataUrl, frame: { ...size, cssWidth: viewport.width, cssHeight: viewport.height }, viewport, fallback: true };
+      } finally {
+        chrome.tabs.onActivated.removeListener(activation);
+      }
     } finally {
       if (veiled) void veilMarks(id, false);
     }
@@ -2830,6 +2919,7 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
   if (dead.length) await chrome.storage.local.remove(dead);
 });
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  invalidateScreenshotFrame(tabId);
   // 全局槽 + 所有会话级槽一次扫清，别留指向死 tab 的槽
   const all = await chrome.storage.local.get(null);
   const dead = Object.keys(all).filter((k) => (k === 'activeTabId' || k.startsWith('agentTab:')) && all[k] === tabId);
@@ -2861,10 +2951,28 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 // 这个监听器对浏览器里每一个标签页的每一次加载都会响，所以 syncMark 的
 // 第一件事是查 liveSids：没有会话在线时它一次 storage.get 就返回了。
 chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.url || info.status === 'loading' || info.discarded) invalidateScreenshotFrame(tabId);
   if (info.status === 'complete') void syncMark(tabId);
 });
 
+chrome.tabs.onZoomChange.addListener(({ tabId }) => invalidateScreenshotFrame(tabId));
+
 chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
+  if (m?.__hcScreenshotViewportResize && sender.tab?.id && sender.frameId === 0) {
+    const { id } = sender.tab;
+    // A clipped CDP capture can briefly reconfigure the compositor. Check
+    // the current viewport before invalidating an already delivered frame.
+    void (async () => {
+      const frame = await screenshotFrames.load(id);
+      if (!frame || frame.viewport.documentId !== sender.documentId) return;
+      const viewport = await readScreenshotViewport(id);
+      if (screenshotFrames.get(id) === frame && !sameViewport(frame.viewport, viewport)) {
+        screenshotFrames.dropViewport(id);
+        cdp.touch(id);
+      }
+    })().catch(() => {});
+    return false;
+  }
   // offscreen 递进来的：桥发来的命令/事件。这条消息同时把被回收的 SW 叫醒——
   // 这正是把 socket 搬出去之后，SW 仍然能及时干活的原因。
   if (m?.__hcBridge === 'in') {
