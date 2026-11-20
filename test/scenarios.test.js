@@ -1193,7 +1193,7 @@ test('act 里小动静（区块 +几个节点）不作废 ref', async () => {
 test('坐标点击打在画布上，画布收到的是真实事件', async () => {
   await bottom();
   const [x, y] = JSON.parse(await val('(() => { const r = document.getElementById("cv").getBoundingClientRect(); return [Math.round(r.left + 120), Math.round(r.top + 45)]; })()'));
-  const r = await c.call('click', { x, y });
+  const r = await c.call('click', { x, y, css: true });
   assert.match(r.text, /已点击坐标/);
   const got = await val('document.getElementById("cvOut").textContent');
   assert.match(got, /^"12\d,4\d"$/, `画布记到的坐标不对：${got}`);
@@ -1203,7 +1203,7 @@ test('坐标点击打在画布上，画布收到的是真实事件', async () =>
 test('dragTo 走真实拖拽，画布记到起点和终点', async () => {
   await bottom();
   const [x, y] = JSON.parse(await val('(() => { const r = document.getElementById("cv").getBoundingClientRect(); return [Math.round(r.left + 20), Math.round(r.top + 20)]; })()'));
-  const r = await c.call('click', { x, y, dragTo: { x: x + 100, y: y + 30 } });
+  const r = await c.call('click', { x, y, css: true, dragTo: { x: x + 100, y: y + 30 } });
   assert.match(r.text, /已从 \(/);
   const got = await val('document.getElementById("dragOut").textContent');
   assert.match(got, /^"2\d,2\d→1[12]\d,[45]\d"$/, `拖拽起终点不对：${got}`);

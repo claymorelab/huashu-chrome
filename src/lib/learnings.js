@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HOME } from './paths.js';
 import { VERSION } from './version.js';
-import { validateScript } from '../../extension/script.js';
+import { cssRecipeStep, validateScript } from '../../extension/script.js';
 
 const SEED_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'docs', '经验');
 // 环境变量仅供测试隔离用
@@ -84,6 +84,25 @@ const HINT =
 // 过 validateScript）。体检不合格也照存——经验不阻塞是硬约束——但要当面
 // 说清，否则坏剧本会安静地躺到下个会话才炸。
 const PLAYBOOK_RE = /```act\s*\n([\s\S]*?)```/g;
+
+function labelCssPlaybookPoints(md) {
+  return md.replace(PLAYBOOK_RE, (block, body) => {
+    let steps;
+    try { steps = JSON.parse(body); } catch { return block; }
+    if (!Array.isArray(steps)) return block;
+    let changed = false;
+    const walk = (list) => list.map((step) => {
+      const labelled = cssRecipeStep(step);
+      changed ||= labelled !== step;
+      for (const key of ['steps', 'then', 'else']) {
+        if (Array.isArray(labelled?.[key])) labelled[key] = walk(labelled[key]);
+      }
+      return labelled;
+    });
+    const labelled = walk(steps);
+    return changed ? '```act\n' + JSON.stringify(labelled, null, 2) + '\n```' : block;
+  });
+}
 
 export function lintPlaybooks(md) {
   const warns = [];
@@ -192,8 +211,8 @@ export function getLearnings(domain) {
   if (names.length) parts.push(`[可直接运行的剧本：${names.map((x) => `「${x}」`).join('、')}——见下文 \`\`\`act 块]`);
   const drafts = readDrafts(key);
   if (drafts.length) parts.push(draftsNote(key, drafts));
-  if (seed) parts.push(`## 出厂经验（Claymore Piko v${VERSION}）\n\n${seed}`);
-  if (local) parts.push(`## 本机经验\n\n${local}`);
+  if (seed) parts.push(`## 出厂经验（Claymore Piko v${VERSION}）\n\n${labelCssPlaybookPoints(seed)}`);
+  if (local) parts.push(`## 本机经验\n\n${labelCssPlaybookPoints(local)}`);
   // 有剧本才多说一句——没有就零噪音（经验不阻塞，也不添乱）
   const n = countPlaybooks(parts.join('\n'));
   if (n) {

@@ -191,7 +191,7 @@ npx claymore-piko-browser doctor
 
 | 工具 | 干什么 |
 |---|---|
-| `screenshot` | 只在版式本身就是问题时用。开了高保真模式可以直接截后台标签页，不打断你。默认 60% 缩放的 JPEG（视觉 token 省四分之三），`full:true` 拿 1:1 PNG；`savePath` 落盘不进上下文 |
+| `screenshot` | 只在版式本身就是问题时用。开了高保真模式可以直接截后台标签页，不打断你。默认缩放 JPEG（通常少约 64% 的像素，节省视觉 token），`full:true` 返回尺寸预算内最大 PNG。坐标点击用该标签页最新截图的像素。计算出的 CSS 坐标用 `css:true`。`savePath` 落盘不进上下文 |
 
 这套顺序不用你教给 agent——MCP server 在握手时就把它作为 `instructions` 下发了。
 
@@ -446,6 +446,7 @@ npx claymore-piko-browser audit --stats     # 真实 Bot 的用法统计：回�
 npm install
 npm test              # 协议与安全边界，不需要浏览器
 npm run test:live     # 交互场景回归，需要 Chrome + 已装扩展
+npm run test:frame:live # 截图坐标回归，自动创建临时 Chrome 配置目录
 node src/cli.js bridge --foreground
 ```
 

@@ -154,3 +154,13 @@ test('草稿：同样步骤再跑通只记次数；adopt 后进经验且列在�
   assert.doesNotMatch(after, /待确认的剧本草稿/);
   assert.deepEqual(lintPlaybooks(after), []);
 });
+
+test('legacy playbook click and drag points retain CSS units during replay', () => {
+  const step = { do: 'click', x: 21, y: 40, dragTo: { x: 24, y: 48 } };
+  const recipe = [{ do: 'scroll' }, { do: 'if', cond: { selectorExists: '#example' }, then: [step] }, { do: 'wait' }];
+  saveLearnings('frame-playbook.example', '\`\`\`act\n' + JSON.stringify(recipe) + '\n\`\`\`');
+  const note = getLearnings('frame-playbook.example');
+  const storedSteps = JSON.parse(note.match(/\`\`\`act\s*\n([\s\S]*?)\`\`\`/)[1]);
+  assert.deepEqual(storedSteps[1].then[0], { ...step, css: true });
+  assert.deepEqual(toRecipe([step, { do: 'wait' }, { do: 'scroll' }])[0], { ...step, css: true });
+});

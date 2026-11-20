@@ -25,7 +25,11 @@
 // ip33 魔方页实测：连续截图的高度在 1610 / 1722 之间来回跳，根因就是它跟着
 // L2 的通断反复出现。screenshot() 里为此钉了一层视口覆盖（见该函数注释）。
 
+import { captureScale, fitsCaptureLimit, screenshotFrames, screenshotSize } from './screenshot-frame.js';
+
 const L2_IDLE_MS = 5000;
+// A model turn regularly takes longer than the ordinary L2 idle timeout.
+const FRAME_IDLE_MS = 60000;
 const PROTOCOL = '1.3';
 
 // tabId -> { timer, ready }
@@ -115,14 +119,15 @@ async function ensureAttached(tabId) {
   touch(tabId);
 }
 
-function touch(tabId) {
+export function touch(tabId) {
   const s = sessions.get(tabId);
   if (!s) return;
   if (s.timer) clearTimeout(s.timer);
-  s.timer = setTimeout(() => detach(tabId), L2_IDLE_MS);
+  s.timer = setTimeout(() => detach(tabId), screenshotFrames.get(tabId) ? FRAME_IDLE_MS : L2_IDLE_MS);
 }
 
 export async function detach(tabId) {
+  screenshotFrames.clear(tabId);
   const s = sessions.get(tabId);
   if (s?.timer) clearTimeout(s.timer);
   sessions.delete(tabId);
@@ -151,6 +156,7 @@ export async function reapOrphans() {
 // 撤销权限之后就再也调不动 chrome.debugger 了，这是最后的机会。
 export async function reapAll() {
   for (const [tabId] of sessions) {
+    screenshotFrames.clear(tabId);
     const s = sessions.get(tabId);
     if (s?.timer) clearTimeout(s.timer);
   }
@@ -287,6 +293,17 @@ export async function setFileInput(tabId, selector, files) {
   });
 }
 
+const captureQueues = new Map();
+
+function withCapture(tabId, fn) {
+  const prior = captureQueues.get(tabId);
+  const next = (prior ? prior.catch(() => {}) : Promise.resolve()).then(() => withL2(tabId, fn));
+  captureQueues.set(tabId, next);
+  return next.finally(() => {
+    if (captureQueues.get(tabId) === next) captureQueues.delete(tabId);
+  });
+}
+
 // ---------- 页面 ----------
 
 // 截后台标签页。captureVisibleTab 截的是「那个窗口当前可见的那一页」，
@@ -317,11 +334,16 @@ async function pinViewport(cmd) {
 // （经验库约 18 个站记过「骨架，不是未登录」）。截一帧会推一次渲染管线——agent 的绕法
 // 就是「先截个图」，这里做成内建的，结果丢掉不用。
 export async function forceFrame(tabId) {
-  await screenshot(tabId);
+  await withCapture(tabId, async (cmd) => {
+    const { visualViewport: v } = await cmd('Page.getLayoutMetrics');
+    await cmd('Page.captureScreenshot', { format: 'jpeg', quality: 25, captureBeyondViewport: false,
+      clip: { x: v.pageX, y: v.pageY, width: v.clientWidth, height: v.clientHeight, scale: 0.1 } });
+  });
 }
 
+// Callers without the frame protocol keep the legacy wire format and capture behavior.
 export async function screenshot(tabId, { full = false } = {}) {
-  return withL2(tabId, async (cmd) => {
+  return withCapture(tabId, async (cmd) => {
     const s = sessions.get(tabId);
     let size = s?.metrics;
     if (!size) {
@@ -341,6 +363,50 @@ export async function screenshot(tabId, { full = false } = {}) {
       clip: { x: 0, y: 0, width: size.width, height: size.height, scale },
     });
     return { dataUrl: `data:image/jpeg;base64,${r.data}`, scale };
+  });
+}
+
+// CDP's clip uses device-independent pixels. The visual viewport gives its origin in
+// the document, and the CSS viewport gives the corresponding Input coordinates.
+export function captureScreenshotFrame(tabId, full, readViewport) {
+  return withCapture(tabId, async (cmd) => {
+    const session = sessions.get(tabId);
+    if (session?.metrics) {
+      await cmd('Emulation.clearDeviceMetricsOverride');
+      session.metrics = null;
+    }
+    const viewport = await readViewport();
+    const { visualViewport: v, cssVisualViewport: css } = await cmd('Page.getLayoutMetrics');
+    const width = v.clientWidth, height = v.clientHeight;
+    const zoom = width / css.clientWidth;
+    const dpr = viewport.dpr / zoom;
+    let scale = captureScale(width * dpr, height * dpr, (full ? 1 : 0.6) * v.scale);
+    const format = full ? 'png' : 'jpeg';
+    // Keep a stable CSS viewport while Chrome applies the compositor clip.
+    await cmd('Emulation.setDeviceMetricsOverride', {
+      // The main viewport includes browser scrollbars, unlike the visual clip.
+      width: Math.round(Math.max(width * v.scale, viewport.width * zoom)),
+      height: Math.round(Math.max(height * v.scale, viewport.height * zoom)),
+      deviceScaleFactor: 0, mobile: false,
+    });
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const result = await cmd('Page.captureScreenshot', {
+          format, ...(full ? {} : { quality: 80 }), captureBeyondViewport: false,
+          clip: { x: css.pageX * zoom, y: css.pageY * zoom, width, height, scale },
+        });
+        const dataUrl = `data:image/${format};base64,${result.data}`;
+        const size = screenshotSize(dataUrl);
+        if (fitsCaptureLimit(size)) {
+          return { dataUrl, frame: { ...size, cssWidth: css.clientWidth, cssHeight: css.clientHeight }, viewport };
+        }
+        // The compositor rounds dimensions to whole pixels. Retry from the measured raster.
+        scale *= captureScale(size.width + 1, size.height + 1);
+      }
+    } finally {
+      await cmd('Emulation.clearDeviceMetricsOverride');
+    }
+    throw new Error('Chrome could not capture a screenshot inside the image limits');
   });
 }
 
@@ -402,6 +468,7 @@ function wireDebuggerEvents() {
   chrome.debugger.onDetach.addListener((source) => {
     const tabId = source.tabId;
     if (tabId == null) return;
+    screenshotFrames.clear(tabId);
     const s = sessions.get(tabId);
     if (s?.timer) clearTimeout(s.timer);
     sessions.delete(tabId);

@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { VERSION } from './lib/version.js';
 import { compat, compatNote } from '../extension/compat.js';
+import { FRAME_MODE, exceedsStockLimit, screenshotSize } from '../extension/screenshot-frame.js';
 
 const REF = { type: 'string', description: 'Element ref from the latest snapshot, e.g. "e3"' };
 const SNAP = { type: 'string', description: 'snapshotId the ref came from' };
@@ -72,14 +73,14 @@ const TOOLS = [
   {
     name: 'click',
     description: 'Click ONE element by ref. Know your next step already? Use `act` instead — each extra call costs a full model turn. '
-      + 'Canvas / map / game with nothing in the snapshot? Pass x,y (CSS px from a screenshot) for a real click there; add dragTo for a drag.',
+      + 'Canvas / map / game with nothing in the snapshot? Pass x,y (pixels of this tab\'s latest screenshot; use `css:true` for CSS px you computed in the page; with no screenshot, use CSS px) for a real click there; add dragTo for a drag.',
     inputSchema: {
       type: 'object',
       // 没有 button 参数：右键弹出的是浏览器原生菜单，扩展够不着，
       // 给了也只是个做不到的承诺；中键开新标签页用 tabs(action:"new") 更直接。
       properties: {
         ref: REF, find: FIND, snapshotId: SNAP, selector: SEL, tabId: TAB, real: REAL, expect: EXPECT,
-        x: { type: 'number' }, y: { type: 'number' },
+        x: { type: 'number' }, y: { type: 'number' }, css: { type: 'boolean' },
         dragTo: { type: 'object', description: '{x, y}: press at x,y, move here, release.' },
       },
       required: [],
@@ -179,14 +180,14 @@ const TOOLS = [
     name: 'screenshot',
     description:
       'Screenshot the controlled tab, background tabs included. Prefer snapshot / read_text — ' +
-      'they cost far less. Returned at 60% scale as JPEG by default; full:true for 1:1 PNG (e.g. to read small text or measure pixels).',
+      'they cost far less. Returned as a scaled JPEG by default; full:true for the largest PNG within the image limits (e.g. to read small text or measure pixels).',
     inputSchema: {
       type: 'object',
       properties: {
         tabId: TAB, ref: REF, snapshotId: SNAP,
         focus: { type: 'boolean', description: 'Bring the tab forward first. Interrupts the user — ask before using.' },
         savePath: { type: 'string', description: 'Absolute path to write the image instead of returning it inline.' },
-        full: { type: 'boolean', description: 'Full-resolution PNG instead of the scaled JPEG.' },
+        full: { type: 'boolean', description: 'PNG within the image limits instead of the scaled JPEG.' },
       },
     },
   },
@@ -363,6 +364,7 @@ const TOOLS = [
             properties: {
               do: { type: 'string', enum: ['click', 'type', 'select', 'fill', 'key', 'wait', 'scroll', 'navigate', 'read', 'repeat', 'if', 'assert'] },
               ref: REF, find: FIND, selector: SEL,
+              x: { type: 'number' }, y: { type: 'number' }, dragTo: { type: 'object' }, css: { type: 'boolean' },
               text: { type: 'string', description: 'for type' },
               contains: { type: 'string', description: 'for read: find visible text' },
               attr: { type: 'string', description: 'for read: also report this attribute (value, checked, href…)' },
@@ -561,6 +563,19 @@ export function sessionWindowsFromEnv(env = process.env) {
   return String(env.HUASHU_CHROME_SESSION_WINDOWS ?? '').trim() === '1';
 }
 
+function frameToolParams(name, args) {
+  if (name === 'ask') return { ...args, disabled: process.env.HUASHU_CHROME_ASK === 'off' };
+  if (name === 'screenshot' || name === 'click' || name === 'act') return { ...args, [FRAME_MODE]: true };
+  return args;
+}
+
+export function screenshotSummary({ dataUrl, frame, fallback }) {
+  const size = frame || screenshotSize(dataUrl);
+  const pointUnit = frame ? "click x,y use this image's pixels" : 'click x,y use CSS pixels with this extension';
+  const warning = (fallback || !frame) && exceedsStockLimit(size) ? '; image exceeds stock model image limits' : '';
+  return `${size.width}x${size.height}; ${pointUnit}${warning}`;
+}
+
 export async function startMcpServer({ client = 'unknown' } = {}) {
   const bridge = new BridgeClient({ client, sessionId: sessionIdFromEnv(), label: labelFromEnv(), sessionWindows: sessionWindowsFromEnv() });
   const server = new Server(
@@ -640,7 +655,7 @@ export async function startMcpServer({ client = 'unknown' } = {}) {
         name,
         // 无人值守（cron、服务器）没有人可问。开关放在 MCP 这一侧读环境变量，
         // 扩展只管照做——扩展不该知道自己跑在什么场景里。
-        name === 'ask' ? { ...args, disabled: process.env.HUASHU_CHROME_ASK === 'off' } : args,
+        frameToolParams(name, args),
         { tabId: args.tabId, timeoutMs: callBudget(name, args) });
 
       // 浏览器只能下到 Downloads 里；下完再挪到 agent 要的位置，对它保持透明
@@ -661,7 +676,8 @@ export async function startMcpServer({ client = 'unknown' } = {}) {
           return { content: [{ type: 'text', text: `已保存截图 ${Math.round(b64.length * 3 / 4 / 1024)}KB（${mime}${data.scale && data.scale !== 1 ? `，${Math.round(data.scale * 100)}% 缩放` : ''}）→ ${args.savePath}` }] };
         }
         return {
-          content: [{ type: 'image', data: b64, mimeType: mime }],
+          content: [{ type: 'text', text: screenshotSummary(data) }, { type: 'image', data: b64, mimeType: mime }],
+          ...(data.frame ? { structuredContent: { frame: data.frame } } : {}),
         };
       }
       // 二进制只落盘、只报路径——把 base64 倒进 context 是纯粹的浪费
