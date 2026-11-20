@@ -14,6 +14,7 @@ import { compat, compatNote } from './compat.js';
 import { matchChallenge, hostOf, hostMatches, L2_ORIGINS_SEED } from './risk.js';
 import { CRED_URL, redactCreds } from './redact.js';
 import { identityOf, stripMarkPrefix, groupTitleFor } from './identity.js';
+import { createUpdateGate } from './update-gate.js';
 import { validateScript, condText, repeatMax, EXEC_BUDGET, collectRefs, toRecipe } from './script.js';
 
 // ---------- 连接层 ----------
@@ -83,6 +84,19 @@ async function toBridge(msg) {
 // 任何一条腿连上就按原样补发；桥那侧对断线的在途命令留了宽限，按 __k 照常配对。
 // 只留 60 秒：过了这个时限桥早已把命令判死，补发也没人收。
 const OUTBOX = 'outbox';
+const OUTBOX_TTL_MS = 60000;
+const PENDING_UPDATE = 'pendingExtensionUpdate';
+const updateGate = createUpdateGate({
+  async hasPendingWork() {
+    const { [OUTBOX]: list = [] } = await chrome.storage.session.get(OUTBOX);
+    return list.some(({ t }) => Date.now() - t < OUTBOX_TTL_MS);
+  },
+  reload(version) {
+    console.info(`[Piko] Reloading extension for update to ${version}`);
+    chrome.runtime.reload();
+  },
+  reportError: (error) => console.warn('[Piko] Could not check extension update readiness', error),
+});
 async function stash(msg) {
   if (msg?.type !== 'res') return;   // 事件丢了无妨，回执不能丢
   try {
@@ -96,7 +110,7 @@ async function flushOutbox(sendFn) {
   try { ({ [OUTBOX]: list = [] } = await chrome.storage.session.get(OUTBOX)); } catch { return; }
   if (!list.length) return;
   await chrome.storage.session.remove(OUTBOX).catch(() => {});
-  const fresh = list.filter((it) => Date.now() - it.t < 60000);
+  const fresh = list.filter((it) => Date.now() - it.t < OUTBOX_TTL_MS);
   for (const it of fresh) await sendFn(it.msg);
 }
 
@@ -230,7 +244,7 @@ async function openDirect() {
             const x = JSON.parse(e.data);
             if (x.type === 'pong') return;
             if (x.type === 'ping') { if (sock.readyState === 1) sock.send(JSON.stringify({ type: 'pong' })); return; }
-            onMessage(x);
+            void receiveBridgeMessage(x);
           };
           // 只收拾自己：一条早已被换下的 socket 关掉时，不能把正在用的那条也当没了
           sock.onclose = () => { if (directWs !== sock) return; directWs = null; stopDirectPing(); setBadge(false); };
@@ -242,7 +256,9 @@ async function openDirect() {
       startDirectPing();
       setBadge(true);
       noteBridgeVersion(directBridgeVersion);
-      void flushOutbox(async (m) => { if (directWs?.readyState === 1) directWs.send(JSON.stringify(m)); });
+      void updateGate.run(() => flushOutbox(async (m) => {
+        if (directWs?.readyState === 1) directWs.send(JSON.stringify(m));
+      }));
       return;
     } catch { /* 换下一个端口 */ }
   }
@@ -301,6 +317,10 @@ const emit = (event, extra = {}) => toBridge({ type: 'event', event, ...extra })
 // （它常在第一个 tab 存在之前就被调，走槽解析会平白抛 NO_TAB）
 const NO_SLOT_CMDS = new Set(['tabs', 'download', 'reload', 'status']);
 
+function receiveBridgeMessage(msg) {
+  return updateGate.run(() => onMessage(msg));
+}
+
 async function onMessage(msg) {
   if (msg.type === 'event') return onBridgeEvent(msg);
   if (msg.type !== 'cmd') return;
@@ -356,10 +376,10 @@ async function onMessage(msg) {
       if (ctx.screenshotTicket) cdp.touch(tabId);
       data = { dataUrl, frame: { tabId, ...frame }, fallback };
     }
-    reply(msg.id, true, data, msg.__k);
+    return reply(msg.id, true, data, msg.__k);
   } catch (e) {
     if (ctx?.screenshotTicket) screenshotFrames.cancel(tabId, ctx.screenshotTicket);
-    reply(msg.id, false, { code: e.code || 'INTERNAL', message: e.message || String(e) }, msg.__k);
+    return reply(msg.id, false, { code: e.code || 'INTERNAL', message: e.message || String(e) }, msg.__k);
   }
 }
 
@@ -466,7 +486,7 @@ function onBridgeEvent(msg) {
   if (msg.event === 'session_ended') return closeSessionWindow(msg.sid);
   if (msg.event !== 'sessions') return;
   // 先落盘再重算：resyncMarks 里的 ownersOfTab 读的就是 storage 名单
-  void pruneNetHook(msg.live);
+  void updateGate.run(() => pruneNetHook(msg.live));
   return noteSession(null, null, msg.live).then(() => resyncMarks());
 }
 
@@ -746,7 +766,11 @@ async function notePanel(tabId, data) {
   await chrome.storage.session.set({ [panelKey(tabId)]: { ...rest, actAt: data.act ? Date.now() : 0, at: Date.now() } }).catch(() => {});
 }
 
-async function syncMark(tabId, { act, sid, plan } = {}) {
+function syncMark(tabId, options) {
+  return updateGate.run(() => syncMarkForSession(tabId, options));
+}
+
+async function syncMarkForSession(tabId, { act, sid, plan } = {}) {
   if (!tabId) return;
   try {
     const owners = await ownersOfTab(tabId);
@@ -755,11 +779,11 @@ async function syncMark(tabId, { act, sid, plan } = {}) {
     // 「接下来」栏里挂着永远不会跑的步骤是在骗用户
     const msg = { __hcMark: 'set', owners, act: act || null, sid, plan: plan || null, tabLabel: await getLabel(tabId), ...(await panelData(owners)) };
     // 侧栏不受「控制标记」开关管：那个开关是为录屏时页面上别多一圈边框，侧栏不在画面里
-    void notePanel(tabId, msg);
+    void updateGate.run(() => notePanel(tabId, msg));
     if (!(await markEnabled())) return;
     // 标签组跟着同一份归属关系走，但不挤在这条 await 链上：
     // 组画不上（用户正在拖标签页、旧 Chrome 没有 API）不该拖累页内标记。
-    void syncGroup(tabId, owners);
+    void updateGate.run(() => syncGroup(tabId, owners));
     await noteMarked(tabId, owners.length > 0);
     if (await postMark(tabId, msg)) return;
     // 没人接消息 = 页面里没有 mark.js。既然这页也没有主，就别为了摘一个
@@ -2891,6 +2915,19 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
 // 清掉已注册的 alarm。以前那套靠 socket 常驻吊着 SW，看不出问题；socket 一搬走，
 // 「没 alarm + 没 socket」就等于扩展永久哑掉，而且一声不响。
 // create 同名 alarm 是幂等的（覆盖），重复调用没有代价。
+// The service worker may be suspended before the outbox drains. Remember the
+// event for the next worker. Chrome clears storage.session on extension reload.
+chrome.runtime.onUpdateAvailable.addListener(({ version }) => {
+  void updateGate.run(async () => {
+    await chrome.storage.session.set({ [PENDING_UPDATE]: version }).catch(() => {});
+    void updateGate.available(version);
+  });
+});
+void updateGate.run(async () => {
+  const data = await chrome.storage.session.get(PENDING_UPDATE).catch(() => ({}));
+  if (data[PENDING_UPDATE]) void updateGate.available(data[PENDING_UPDATE]);
+});
+
 chrome.alarms.create('hc-keepalive', { periodInMinutes: 0.5 });
 chrome.runtime.onStartup.addListener(() => chrome.alarms.create('hc-keepalive', { periodInMinutes: 0.5 }));
 // SW 上一条命里挂着的调试会话，浏览器还替它留着——连同那条黄带子。
@@ -2900,6 +2937,8 @@ cdp.reapOrphans();
 // 没连上就先把 offscreen 扶起来，还不行就自己顶上——这是「装完就自动连上、
 // 永远不需要用户手点」的最后一道保险，所以判据必须是连通性本身。
 chrome.alarms?.onAlarm.addListener(async () => {
+  // A buffered response stops blocking after the bridge's grace window.
+  void updateGate.check();
   await ensureOffscreen();
   if (await connected()) return setBadge(true);
   // 先让 offscreen 那条腿尽力——kick 会等它把五个端口探完再回话。
@@ -2976,7 +3015,7 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
   // offscreen 递进来的：桥发来的命令/事件。这条消息同时把被回收的 SW 叫醒——
   // 这正是把 socket 搬出去之后，SW 仍然能及时干活的原因。
   if (m?.__hcBridge === 'in') {
-    onMessage(m.msg);
+    void receiveBridgeMessage(m.msg);
     return false;
   }
   // offscreen 真的连上了，把 SW 自己那条兜底 socket 关掉——
@@ -2986,7 +3025,8 @@ chrome.runtime.onMessage.addListener((m, sender, sendResponse) => {
     noteBridgeVersion(m.bridge);
     if (directWs) { stopDirectPing(); try { directWs.close(); } catch { /* 已经废了 */ } directWs = null; }
     // 断线期间攒下的回执，连上就补发——桥那侧留着宽限等它们
-    void flushOutbox((msg) => chrome.runtime.sendMessage({ __hcBridge: 'out', msg }).catch(() => null));
+    void updateGate.run(() =>
+      flushOutbox((msg) => chrome.runtime.sendMessage({ __hcBridge: 'out', msg }).catch(() => null)));
     return false;
   }
   // offscreen 拿不到 chrome.runtime.getManifest()，握手身份只能由这边供给
